@@ -7,16 +7,24 @@ Common features:
  - Removed fonts count limit.
  - Raised imported sprites count limit to 90000 and removed total sprite count limit
    (this means you may have around 2 billions of dynamic sprites).
+ - Removed length limit on the Button and TextBox text.
 
 Editor:
  - Editor requires .NET Framework 4.5 to run. Dropped Windows XP support.
  - Editor preferences are now stored using .NET configuration model, instead of the
    Windows registry.
  - Added support for custom UI color themes.
+ - Game and room templates are now by default saved in AppData/Local/AGS folder.
+   Editor finds them in both program folder and AppData.
+ - New revamped sprite import window.
+ - Sprites that were created using tiled import can now be properly reimported from source.
  - New navigation bar in the room editor, which allows to select any room object
    or region for editing, show/hide and lock room objects and regions in any combination.
    These settings are saved in the special roomXXX.crm.user files.
+ - Allow room size to be smaller than the game's resolution.
  - Removed Locked property from the Room Object, objects are now locked by the navbar.
+ - Split GUI's Visibility property into PopupStyle and Visible properties.
+ - Added Clickable, Enabled and Visible properties to GUI Controls.
  - Improved how Room zoom slider works, now supports downscale.
  - Added "Export mask to file" tool button to the Room Editor.
  - Added "Always"choice to "Popup message on compile" preference. Successful compilation
@@ -31,7 +39,26 @@ Editor:
  - Fixed view loops displayed with offset if the view panel area was scrolled
    horizontally prior to their creation.
  - Fixed TextWindow GUI's elements could be deleted or moved in the editor with key controls.
+ - Fixed GUI or Room editors sometimes allowed to scroll beyond necessary limits.
  - Fixed rooms not being rebuilt when running game just created from a template.
+ - Fixed translations were not available for the test run if game was not fully rebuilt yet.
+ - Fixed Windows Explorer was sometimes locking the game files during compilation.
+
+Script API:
+ - Implemented Viewport and Camera script classes which control how room is displayed on screen.
+ - Added properties Game.AutoSizeViewportOnRoomLoad, Game.Viewport, Room.Camera.
+ - Replaced Alignment enum with a new one which has eight values from TopLeft to BottomRight.
+ - Renamed old Alignment enum to HorizontalAlignment, intended for parameters that are
+   only allowed to be Left, Center or Right.
+ - Added new script class TextWindowGUI, which extends GUI class and is meant to access
+   text-window specific properties: TextColor and TextPadding.
+ - Added new properties to GUI class: AsTextWindow (readonly), BackgroundColor, BorderColor,
+   PopupStyle (readonly), PopupYPos.
+ - Added Button.TextAlignment and Label.TextAlignment.
+ - Added missing properties for ListBox: SelectedBackColor, SelectedTextColor, TextAlignment,
+   TextColor.
+ - Replaced ListBox.HideBorder and HideArrows with ShowBorder and ShowArrows.
+ - Added TextBox.ShowBorder.
 
 Engine:
  - New pathfinder based on the A* jump point search.
@@ -39,11 +66,23 @@ Engine:
    extend, it should also reduce the size of the save files.
    The engine is still capable of loading older saves, temporarily.
  - Prevent game from crashing if there was an attempt to draw text with a non-existing font.
- - SetMouseBounds() no longer crashes the game if it is called with arguments out of range,
-   these parameters are corrected and a warning logged instead.
+ - Removed restriction preventing GUIs to be larger than the game's screen.
+ - Replaced number of fatal errors reported for incorrectly called script functions with
+   a warning to the warnings.log instead. This is done either when arguments may be fixed
+   automatically, or script command simply cannot be executed under current circumstances.
  - Expanded some of the error messages providing more information to end-user and developers.
  - On Linux improved CPU yield function, this supposedly may reduce CPU usage.
+ - Made engine fallback to defaults if config contains invalid game scaling setting.
+ - Fixed old-style string functions like StrCopy could crash the game if user managed object's
+   member is passed as an argument into them.
  - Fixed 'warnings.log' could never be created (was broken in earlier versions).
+ - Fixed crash in the Software renderer which was occuring when any other renderers are tried
+   prior to Software one but failed to initialize for any reason.
+ - Fixed 8-bit sprites could have broken colours if game is run using Direct3D or OpenGL.
+ - Fixed broken colours during fade-in and fade-out in 16-bit games.
+
+Linux:
+ - Fixes Linux game launch script (fixes issues with itch.io client).
 
 Windows:
  - Windows version of AGS is now built with MSVS 2015 and higher.

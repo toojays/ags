@@ -51,7 +51,6 @@ extern roomstruct thisroom;
 extern CharacterInfo*playerchar;
 extern int displayed_room;
 extern SpriteCache spriteset;
-extern int offsetx, offsety;
 extern int actSpsCount;
 extern Bitmap **actsps;
 extern IDriverDependantBitmap* *actspsbmp;
@@ -60,11 +59,10 @@ extern IGraphicsDriver *gfxDriver;
 // Used for deciding whether a char or obj was closer
 int obj_lowest_yp;
 
-int GetObjectAt(int xx,int yy) {
+int GetObjectAt(int scrx, int scry) {
     int aa,bestshotyp=-1,bestshotwas=-1;
     // translate screen co-ordinates to room co-ordinates
-    xx += divide_down_coordinate(offsetx);
-    yy += divide_down_coordinate(offsety);
+    Point roompt = play.ScreenToRoomDivDown(scrx, scry);
     // Iterate through all objects in the room
     for (aa=0;aa<croom->numobj;aa++) {
         if (objs[aa].on != 1) continue;
@@ -79,7 +77,7 @@ int GetObjectAt(int xx,int yy) {
 
         Bitmap *theImage = GetObjectImage(aa, &isflipped);
 
-        if (is_pos_in_sprite(xx, yy, xxx, yyy - spHeight, theImage,
+        if (is_pos_in_sprite(roompt.X, roompt.Y, xxx, yyy - spHeight, theImage,
             spWidth, spHeight, isflipped) == FALSE)
             continue;
 
@@ -131,9 +129,7 @@ void SetObjectView(int obn,int vii) {
     if (!is_valid_object(obn)) quit("!SetObjectView: invalid object number specified");
     debug_script_log("Object %d set to view %d", obn, vii);
     if ((vii < 1) || (vii > game.numviews)) {
-        char buffer[150];
-        sprintf (buffer, "!SetObjectView: invalid view number (You said %d, max is %d)", vii, game.numviews);
-        quit(buffer);
+        quitprintf("!SetObjectView: invalid view number (You said %d, max is %d)", vii, game.numviews);
     }
     vii--;
 
@@ -342,7 +338,10 @@ void SetObjectPosition(int objj, int tox, int toy) {
         quit("!SetObjectPosition: invalid object number");
 
     if (objs[objj].moving > 0)
-        quit("!Object.SetPosition: cannot set position while object is moving");
+    {
+        debug_script_warn("Object.SetPosition: cannot set position while object is moving");
+        return;
+    }
 
     objs[objj].x = tox;
     objs[objj].y = toy;
@@ -492,7 +491,7 @@ void GetObjectPropertyText (int item, const char *property, char *bufer)
 
 Bitmap *GetObjectImage(int obj, int *isFlipped) 
 {
-    if (!gfxDriver->HasAcceleratedStretchAndFlip())
+    if (!gfxDriver->HasAcceleratedTransform())
     {
         if (actsps[obj] != NULL) {
             // the actsps image is pre-flipped, so no longer register the image as such

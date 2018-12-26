@@ -26,29 +26,44 @@ namespace AGSMath = AGS::Common::Math;
 //namespace Common
 //{
 
+// Type of alignment of a geometric item of rectangular boundaries.
 enum FrameAlignment
 {
-    kAlignNone     = 0x00,
-    kAlignLeft     = 0x01,
-    kAlignRight    = 0x02,
-    kAlignHCenter  = 0x04,
-    kAlignTop      = 0x10,
-    kAlignBottom   = 0x20,
-    kAlignVCenter  = 0x40,
+    kAlignNone = 0,
 
-    kAlignTopLeft      = kAlignTop     | kAlignLeft,
-    kAlignTopCenter    = kAlignTop     | kAlignHCenter,
-    kAlignTopRight     = kAlignTop     | kAlignRight,
-    kAlignCenterLeft   = kAlignVCenter | kAlignLeft,
-    kAlignCentered     = kAlignVCenter | kAlignHCenter,
-    kAlignCenterRight  = kAlignVCenter | kAlignRight,
-    kAlignBottomLeft   = kAlignBottom  | kAlignLeft,
-    kAlignBottomCenter = kAlignBottom  | kAlignHCenter,
-    kAlignBottomRight  = kAlignBottom  | kAlignRight,
+    // Alignment options are representing 8 sides of a frame (rectangle);
+    // they are implemented as flags that may be combined together if it
+    // is wanted to define alignment to multiple sides at once.
+    kAlignTopLeft       = 0x0001,
+    kAlignTopCenter     = 0x0002,
+    kAlignTopRight      = 0x0004,
+    kAlignMiddleLeft    = 0x0008,
+    kAlignMiddleCenter  = 0x0010,
+    kAlignMiddleRight   = 0x0020,
+    kAlignBottomLeft    = 0x0040,
+    kAlignBottomCenter  = 0x0080,
+    kAlignBottomRight   = 0x0100,
 
-    // Masks
-    kAlignHor      = kAlignLeft | kAlignRight | kAlignHCenter,
-    kAlignVer      = kAlignTop | kAlignBottom | kAlignVCenter,
+    // Masks are helping to determine whether alignment parameter contains
+    // particular horizontal or vertical component (for example: left side
+    // or bottom side)
+    kMAlignLeft         = kAlignTopLeft | kAlignMiddleLeft | kAlignBottomLeft,
+    kMAlignRight        = kAlignTopRight | kAlignMiddleRight | kAlignBottomRight,
+    kMAlignTop          = kAlignTopLeft | kAlignTopCenter | kAlignTopRight,
+    kMAlignBottom       = kAlignBottomLeft | kAlignBottomCenter | kAlignBottomRight,
+    kMAlignHCenter      = kAlignTopCenter | kAlignMiddleCenter | kAlignBottomCenter,
+    kMAlignVCenter      = kAlignMiddleLeft | kAlignMiddleCenter | kAlignMiddleRight
+};
+
+// Horizontal alignment; based on FrameAlignment, used to restrict alignment
+// setting to left/right/center option, while keeping compatibility with any
+// alignment in case it will be supported in the future.
+enum HorAlignment
+{
+    kHAlignNone     = kAlignNone,
+    kHAlignLeft     = kAlignTopLeft,
+    kHAlignRight    = kAlignTopRight,
+    kHAlignCenter   = kAlignTopCenter
 };
 
 enum RectPlacement
@@ -75,6 +90,21 @@ struct Point
     {
         X = x;
         Y = y;
+    }
+
+    inline bool operator ==(const Point &p) const
+    {
+        return X == p.X && Y == p.Y;
+    }
+
+    inline bool operator !=(const Point &p) const
+    {
+        return X != p.X || Y != p.Y;
+    }
+
+    inline Point operator +(const Point &p) const
+    {
+        return Point(X + p.X, Y + p.Y);
     }
 };
 
@@ -135,10 +165,10 @@ struct Size
         return Width <= 0 || Height <= 0;
     }
 
-    inline void Clamp(const Size floor, const Size ceil)
+    inline static Size Clamp(const Size &sz, const Size &floor, const Size &ceil)
     {
-        Width = AGSMath::Clamp(Width, floor.Width, ceil.Width);
-        Height = AGSMath::Clamp(Height, floor.Height, ceil.Height);
+        return Size(AGSMath::Clamp(sz.Width, floor.Width, ceil.Width),
+                    AGSMath::Clamp(sz.Height, floor.Height, ceil.Height));
     }
 
     // Indicates if current size exceeds other size by any metric
@@ -158,7 +188,7 @@ struct Size
     }
 
     inline bool operator<(const Size &other) const
-    {
+    { // TODO: this implementation is silly and not universally useful; make a realistic one and replace with another function where necessary
         return Width < other.Width || (Width == other.Width && Height < other.Height);
     }
 
@@ -217,6 +247,11 @@ struct Rect
         return Point(Left, Top);
     }
 
+    inline Point GetCenter() const
+    {
+        return Point(Left + GetWidth() / 2, Top + GetHeight() / 2);
+    }
+
 	inline int GetWidth() const
 	{
 		return Right - Left + 1;
@@ -273,6 +308,11 @@ struct Rect
     inline void SetHeight(int height)
     {
         Bottom = Top + height - 1;
+    }
+
+    inline static Rect MoveBy(const Rect &r, int x, int y)
+    {
+        return Rect(r.Left + x, r.Top + y, r.Right + x, r.Bottom + y);
     }
 };
 
@@ -341,6 +381,10 @@ struct Circle
 };
 
 
+// Tells if two rectangles intersect (overlap) at least partially
+bool AreRectsIntersecting(const Rect &r1, const Rect &r2);
+// Tells if the item is completely inside place
+bool IsRectInsideRect(const Rect &place, const Rect &item);
 
 int AlignInHRange(int x1, int x2, int off_x, int width, FrameAlignment align);
 int AlignInVRange(int y1, int y2, int off_y, int height, FrameAlignment align);
@@ -351,6 +395,7 @@ Size ProportionalStretch(const Size &dest, const Size &item);
 
 Rect OffsetRect(const Rect &r, const Point off);
 Rect CenterInRect(const Rect &place, const Rect &item);
+Rect ClampToRect(const Rect &place, const Rect &item);
 Rect PlaceInRect(const Rect &place, const Rect &item, const RectPlacement &placement);
 //} // namespace Common
 //} // namespace AGS

@@ -31,6 +31,11 @@
       #define STRICT_IN_v340
     #endif
   #endif
+  #ifdef SCRIPT_API_v350
+    #ifndef SCRIPT_COMPAT_v341
+      #define STRICT_IN_v350
+    #endif
+  #endif
 #endif
 
 #define function int  // $AUTOCOMPLETEIGNORE$
@@ -124,11 +129,50 @@ enum RepeatStyle {
   eRepeat = 1
 };
 
+#ifdef SCRIPT_API_v350
+enum Alignment {
+  eAlignNone         = 0,
+
+  eAlignTopLeft       = 1,
+  eAlignTopCenter     = 2,
+  eAlignTopRight      = 4,
+  eAlignMiddleLeft    = 8,
+  eAlignMiddleCenter  = 16,
+  eAlignMiddleRight   = 32,
+  eAlignBottomLeft    = 64,
+  eAlignBottomCenter  = 128,
+  eAlignBottomRight   = 256,
+
+  // Masks are helping to determine whether alignment parameter contains
+  // particular horizontal or vertical component (for example: left side
+  // or bottom side)
+  eAlignHasLeft       = 73,
+  eAlignHasRight      = 292,
+  eAlignHasTop        = 7,
+  eAlignHasBottom     = 448,
+  eAlignHasHorCenter  = 146,
+  eAlignHasVerCenter  = 56
+};
+
+enum HorizontalAlignment {
+  // eq eAlignTopLeft
+  eAlignLeft = 1,
+  // eq eAlignTopCenter
+  eAlignCenter = 2,
+#ifdef SCRIPT_COMPAT_v341
+  eAlignCentre = 2,
+#endif
+  // eq eAlignTopRight
+  eAlignRight = 4
+};
+#endif
+#ifndef SCRIPT_API_v350
 enum Alignment {
   eAlignLeft = 1,
   eAlignCentre = 2,
   eAlignRight = 3
 };
+#endif
 
 enum LocationType {
   eLocationNothing = 0,
@@ -446,8 +490,14 @@ builtin managed struct DrawingSurface {
   import void DrawRectangle(int x1, int y1, int x2, int y2);
   /// Draws the specified text to the surface.
   import void DrawString(int x, int y, FontType, const string text, ...);
+#ifdef SCRIPT_API_v350
+  /// Draws the text to the surface, wrapping it at the specified width.
+  import void DrawStringWrapped(int x, int y, int width, FontType, HorizontalAlignment, const string text);
+#endif
+#ifndef SCRIPT_API_v350
   /// Draws the text to the surface, wrapping it at the specified width.
   import void DrawStringWrapped(int x, int y, int width, FontType, Alignment, const string text);
+#endif
   /// Draws the specified surface onto this surface.
   import void DrawSurface(DrawingSurface *surfaceToDraw, int transparency=0);
   /// Draws a filled triangle onto the surface.
@@ -465,6 +515,11 @@ builtin managed struct DrawingSurface {
   /// Gets the width of the surface.
   readonly import attribute int Width;
 };
+
+#ifdef SCRIPT_API_v350
+builtin managed struct Camera;
+builtin managed struct Viewport;
+#endif
 
 builtin managed struct Room {
   /// Gets a custom text property associated with this room.
@@ -500,6 +555,10 @@ builtin managed struct Room {
   import static bool SetTextProperty(const string property, const string value);
   /// Performs default processing of a mouse click at the specified co-ordinates.
   import static void ProcessClick(int x, int y, CursorMode);
+#endif
+#ifdef SCRIPT_API_v350
+  /// Gets the room camera
+  import static readonly attribute Camera *Camera;
 #endif
 };
 
@@ -592,6 +651,12 @@ builtin managed struct Game {
   /// Accesses the audio clips collection.
   readonly import static attribute AudioClip *AudioClips[];
 #endif
+#ifdef SCRIPT_API_v350
+  /// Gets/sets whether the viewport should automatically adjust itself and camera to the new room's background size
+  import static attribute bool AutoSizeViewportOnRoomLoad;
+  /// Gets the room viewport
+  import static readonly attribute Viewport *RoomViewport;
+#endif
 };
 
 builtin managed struct Parser {
@@ -674,6 +739,7 @@ import int  GetScalingAt (int x, int y);
 /// Gets the specified Custom Property for the current room.
 import int  GetRoomProperty(const string property);
 #endif
+#ifndef STRICT_IN_v350
 /// Locks the viewport to stop the screen scrolling automatically.
 import void SetViewport(int x, int y);
 /// Allows AGS to scroll the screen automatically to follow the player character.
@@ -682,6 +748,7 @@ import void ReleaseViewport();
 import int  GetViewportX();
 /// Gets the current Y offset of the scrolled viewport.
 import int  GetViewportY();
+#endif
 /// Returns whether the game is currently paused.
 import int  IsGamePaused();
 import int  GetGraphicalVariable (const string variableName);
@@ -798,10 +865,10 @@ import int  Said (const string text);
 #define TRANSITION_DISSOLVE 2
 #define TRANSITION_BOXOUT   3
 #define TRANSITION_CROSSFADE 4
-#define ALIGN_LEFT    1
-#define ALIGN_CENTRE  2
-#define ALIGN_CENTER  2
-#define ALIGN_RIGHT   3
+#define ALIGN_LEFT    eAlignLeft
+#define ALIGN_CENTRE  eAlignCenter
+#define ALIGN_CENTER  eAlignCenter
+#define ALIGN_RIGHT   eAlignRight
 #define CHAR_IGNORESCALING 1
 #define CHAR_NOINTERACTION 4
 #define CHAR_NODIAGONAL    8
@@ -913,7 +980,12 @@ import void MoveToWalkableArea(CHARID);
 import void FaceCharacter(CHARID, CHARID toFace);
 import void FaceLocation(CHARID, int x, int y);
 import void SetCharacterView(CHARID, int view);
-import void SetCharacterViewEx(CHARID, int view, int loop, int align);
+#ifdef SCRIPT_API_v350
+import void SetCharacterViewEx(CHARID, int view, int loop, HorizontalAlignment align);
+#endif
+#ifndef SCRIPT_API_v350
+import void SetCharacterViewEx(CHARID, int view, int loop, Alignment align);
+#endif
 import void SetCharacterViewOffset(CHARID, int view, int x_offset, int y_offset);
 import void SetCharacterFrame(CHARID, int view, int loop, int frame);
 import void ReleaseCharacterView(CHARID);
@@ -1435,6 +1507,13 @@ enum EventType {
   eEventRestoreGame = 9
 };
 
+enum GUIPopupStyle {
+  eGUIPopupNormal = 0,
+  eGUIPopupMouseYPos = 1,
+  eGUIPopupModal = 2,
+  eGUIPopupPersistent = 3
+};
+
 // forward-declare these so that they can be returned by GUIControl class
 builtin managed struct GUI;
 builtin managed struct Label;
@@ -1444,6 +1523,9 @@ builtin managed struct TextBox;
 builtin managed struct InvWindow;
 builtin managed struct ListBox;
 builtin managed struct Character;
+#ifdef SCRIPT_API_v350
+builtin managed struct TextWindowGUI;
+#endif
 
 builtin managed struct GUIControl {
   /// Brings this control to the front of the z-order, in front of all other controls.
@@ -1503,6 +1585,10 @@ builtin managed struct Label extends GUIControl {
   import attribute String Text;
   /// Gets/sets the colour in which the label text is drawn.
   import attribute int  TextColor;
+#ifdef SCRIPT_API_v350
+  /// Gets/sets list item's text alignment.
+  import attribute HorizontalAlignment TextAlignment;
+#endif
 };
 
 builtin managed struct Button extends GUIControl {
@@ -1542,6 +1628,10 @@ builtin managed struct Button extends GUIControl {
   /// Gets the current view number during an animation.
   readonly import attribute int  View;
 #endif
+#ifdef SCRIPT_API_v350
+  /// Gets/sets text alignment inside the button.
+  import attribute Alignment TextAlignment;
+#endif
 };
 
 builtin managed struct Slider extends GUIControl {
@@ -1570,6 +1660,10 @@ builtin managed struct TextBox extends GUIControl {
   import attribute String Text;
   /// Gets/sets the color of the text in the text box.
   import attribute int TextColor;
+#ifdef SCRIPT_API_v350
+  /// Gets/sets whether the border around the text box is shown.
+  import attribute bool ShowBorder;
+#endif
 };
 
 builtin managed struct InvWindow extends GUIControl {
@@ -1620,10 +1714,12 @@ builtin managed struct ListBox extends GUIControl {
 	import void ScrollUp();
 	/// Gets/sets the font used to draw the list items.
 	import attribute FontType Font;
+#ifdef SCRIPT_COMPAT_v341
 	/// Gets/sets whether the border around the list box is hidden.
 	import attribute bool HideBorder;
 	/// Gets/sets whether the clickable scroll arrows are hidden.
 	import attribute bool HideScrollArrows;
+#endif
 	/// Gets the number of items currently in the list.
 	readonly import attribute int ItemCount;
 	/// Accesses the text for the items in the list.
@@ -1636,6 +1732,20 @@ builtin managed struct ListBox extends GUIControl {
 	import attribute int  SelectedIndex;
 	/// Gets/sets the first visible item in the list.
 	import attribute int  TopItem;
+#ifdef SCRIPT_API_v350
+	/// Gets/sets whether the border around the list box is shown.
+	import attribute bool ShowBorder;
+	/// Gets/sets whether the clickable scroll arrows are shown.
+	import attribute bool ShowScrollArrows;
+	/// Gets/sets color of the list item's selection
+	import attribute int  SelectedBackColor;
+	/// Gets/sets selected list item's text color
+	import attribute int  SelectedTextColor;
+	/// Gets/sets list item's text alignment.
+	import attribute HorizontalAlignment TextAlignment;
+	/// Gets/sets regular list item's text color
+	import attribute int  TextColor;
+#endif
 };
 
 builtin managed struct GUI {
@@ -1677,9 +1787,30 @@ builtin managed struct GUI {
   /// Performs default processing of a mouse click at the specified co-ordinates.
   import static void ProcessClick(int x, int y, MouseButton);
 #endif
+#ifdef SCRIPT_API_v350
+  /// Gets/sets the background color.
+  import attribute int  BackgroundColor;
+  /// Gets/sets the border color. Not applicable to TextWindow GUIs.
+  import attribute int  BorderColor;
+  /// If this GUI is a TextWindow, returns the TextWindowGUI interface; otherwise null.
+  import readonly attribute TextWindowGUI* AsTextWindow; // $AUTOCOMPLETENOINHERIT$
+  /// Gets the style of GUI behavior on screen.
+  import readonly attribute GUIPopupStyle PopupStyle;
+  /// Gets/sets the Y co-ordinate at which the GUI will appear when using MouseYPos popup style.
+  import attribute int  PopupYPos;
+#endif
   
   int   reserved[2];   // $AUTOCOMPLETEIGNORE$
 };
+
+#ifdef SCRIPT_API_v350
+builtin managed struct TextWindowGUI extends GUI {
+  /// Gets/sets the text color.
+  import attribute int  TextColor;
+  /// Gets/sets the amount of padding, in pixels, surrounding the text in the TextWindow.
+  import attribute int  TextPadding;
+};
+#endif
 
 builtin managed struct Hotspot {
   /// Gets the hotspot that is at the specified position on the screen.
@@ -2139,8 +2270,14 @@ builtin managed struct Character {
 #ifdef SCRIPT_API_v341
   /// Locks the character to this view, ready for doing animations.
   import function LockView(int view, StopMovementStyle=eStopMoving);
+#ifdef SCRIPT_API_v350
+  /// Locks the character to this view, and aligns it against one side of the existing sprite.
+  import function LockViewAligned(int view, int loop, HorizontalAlignment, StopMovementStyle=eStopMoving);
+#endif
+#ifndef SCRIPT_API_v350
   /// Locks the character to this view, and aligns it against one side of the existing sprite.
   import function LockViewAligned(int view, int loop, Alignment, StopMovementStyle=eStopMoving);
+#endif
   /// Locks the character to the specified view frame
   import function LockViewFrame(int view, int loop, int frame, StopMovementStyle=eStopMoving);
   /// Locks the character to is view, with high-resolution position adjustment.
@@ -2500,14 +2637,56 @@ builtin struct Speech {
   import static attribute SkipSpeechStyle SkipStyle;
   /// Gets/sets the style in which speech is displayed.
   import static attribute eSpeechStyle    Style;
+#ifdef SCRIPT_API_v350
+  /// Gets/sets how text in message boxes and Sierra-style speech is aligned.
+  import static attribute HorizontalAlignment TextAlignment;
+#endif
+#ifndef SCRIPT_API_v350
   /// Gets/sets how text in message boxes and Sierra-style speech is aligned.
   import static attribute Alignment       TextAlignment;
+#endif
   /// Gets/sets whether speech animation delay should use global setting (or Character setting).
   import static attribute bool            UseGlobalSpeechAnimationDelay;
   /// Gets/sets whether voice and/or text are used in the game.
   import static attribute eVoiceMode      VoiceMode;
 };
 #endif
+
+#ifdef SCRIPT_API_v350
+builtin managed struct Camera
+{
+  /// Gets/sets the X position of this camera in the room.
+  import attribute int X;
+  /// Gets/sets the Y position of this camera in the room.
+  import attribute int Y;
+  /// Gets/sets the camera's capture width in room coordinates.
+  import attribute int Width;
+  /// Gets/sets the camera's capture height in room coordinates.
+  import attribute int Height;
+  /// Gets/sets this camera's room horizontal scaling relative to the viewport it is displayed in.
+  import attribute float ScaleX;
+  /// Gets/sets this camera's room vertical scaling relative to the viewport it is displayed in.
+  import attribute float ScaleY;
+
+  /// Gets/sets whether this camera will follow the player character automatically.
+  import attribute bool AutoTracking;
+};
+
+builtin managed struct Viewport
+{
+  /// Gets/sets the X position on the screen where this viewport is located.
+  import attribute int X;
+  /// Gets/sets the Y position on the screen where this viewport is located.
+  import attribute int Y;
+  /// Gets/sets the viewport's width in screen coordinates.
+  import attribute int Width;
+  /// Gets/sets the viewport's height in screen coordinates.
+  import attribute int Height;
+  /// Gets the room camera displayed in this viewport.
+  import readonly attribute Camera *Camera;
+};
+#endif
+
 
 
 import readonly Character *player;

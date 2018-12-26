@@ -213,8 +213,8 @@ HSaveError WriteGameState(PStream out)
     out->WriteInt32(cur_cursor);
     out->WriteInt32(mouse_on_iface);
     // Viewport
-    out->WriteInt32(offsetx);
-    out->WriteInt32(offsety);
+    out->WriteInt32(play.GetRoomCamera().Left);
+    out->WriteInt32(play.GetRoomCamera().Top);
     return HSaveError::None();
 }
 
@@ -236,7 +236,7 @@ HSaveError ReadGameState(PStream in, int32_t cmp_ver, const PreservedParams &pp,
     }
 
     // Game state
-    play.ReadFromSavegame(in.get(), false);
+    play.ReadFromSavegame(in.get(), (GameStateSvgVersion)cmp_ver);
 
     // Other dynamic values
     r_data.FPS = in->ReadInt32();
@@ -248,8 +248,9 @@ HSaveError ReadGameState(PStream in, int32_t cmp_ver, const PreservedParams &pp,
     r_data.CursorID = in->ReadInt32();
     mouse_on_iface = in->ReadInt32();
     // Viewport state
-    offsetx = in->ReadInt32();
-    offsety = in->ReadInt32();
+    int camx = in->ReadInt32();
+    int camy = in->ReadInt32();
+    play.SetRoomCameraAt(camx, camy);
     return err;
 }
 
@@ -467,55 +468,56 @@ HSaveError WriteGUI(PStream out)
 HSaveError ReadGUI(PStream in, int32_t cmp_ver, const PreservedParams &pp, RestoredData &r_data)
 {
     HSaveError err;
+    const GuiSvgVersion svg_ver = (GuiSvgVersion)cmp_ver;
     // GUI state
     if (!AssertFormatTagStrict(err, in, "GUIs"))
         return err;
     if (!AssertGameContent(err, in->ReadInt32(), game.numgui, "GUIs"))
         return err;
     for (int i = 0; i < game.numgui; ++i)
-        guis[i].ReadFromSavegame(in.get());
+        guis[i].ReadFromSavegame(in.get(), svg_ver);
 
     if (!AssertFormatTagStrict(err, in, "GUIButtons"))
         return err;
     if (!AssertGameContent(err, in->ReadInt32(), numguibuts, "GUI Buttons"))
         return err;
     for (int i = 0; i < numguibuts; ++i)
-        guibuts[i].ReadFromSavegame(in.get());
+        guibuts[i].ReadFromSavegame(in.get(), svg_ver);
 
     if (!AssertFormatTagStrict(err, in, "GUILabels"))
         return err;
     if (!AssertGameContent(err, in->ReadInt32(), numguilabels, "GUI Labels"))
         return err;
     for (int i = 0; i < numguilabels; ++i)
-        guilabels[i].ReadFromSavegame(in.get());
+        guilabels[i].ReadFromSavegame(in.get(), svg_ver);
 
     if (!AssertFormatTagStrict(err, in, "GUIInvWindows"))
         return err;
     if (!AssertGameContent(err, in->ReadInt32(), numguiinv, "GUI InvWindows"))
         return err;
     for (int i = 0; i < numguiinv; ++i)
-        guiinv[i].ReadFromSavegame(in.get());
+        guiinv[i].ReadFromSavegame(in.get(), svg_ver);
 
     if (!AssertFormatTagStrict(err, in, "GUISliders"))
         return err;
     if (!AssertGameContent(err, in->ReadInt32(), numguislider, "GUI Sliders"))
         return err;
     for (int i = 0; i < numguislider; ++i)
-        guislider[i].ReadFromSavegame(in.get());
+        guislider[i].ReadFromSavegame(in.get(), svg_ver);
 
     if (!AssertFormatTagStrict(err, in, "GUITextBoxes"))
         return err;
     if (!AssertGameContent(err, in->ReadInt32(), numguitext, "GUI TextBoxes"))
         return err;
     for (int i = 0; i < numguitext; ++i)
-        guitext[i].ReadFromSavegame(in.get());
+        guitext[i].ReadFromSavegame(in.get(), svg_ver);
 
     if (!AssertFormatTagStrict(err, in, "GUIListBoxes"))
         return err;
     if (!AssertGameContent(err, in->ReadInt32(), numguilist, "GUI ListBoxes"))
         return err;
     for (int i = 0; i < numguilist; ++i)
-        guilist[i].ReadFromSavegame(in.get());
+        guilist[i].ReadFromSavegame(in.get(), svg_ver);
 
     // Animated buttons
     if (!AssertFormatTagStrict(err, in, "AnimatedButtons"))
@@ -996,8 +998,8 @@ ComponentHandler ComponentHandlers[] =
     },
     {
         "GUI",
-        0,
-        0,
+        kGuiSvgVersion_350,
+        kGuiSvgVersion_Initial,
         WriteGUI,
         ReadGUI
     },

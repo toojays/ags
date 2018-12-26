@@ -904,9 +904,9 @@ void show_preload () {
         Bitmap *tsc = BitmapHelper::CreateBitmapCopy(splashsc, screen_bmp->GetColorDepth());
 
 		screen_bmp->Fill(0);
-        screen_bmp->StretchBlt(tsc, RectWH(0, 0, play.viewport.GetWidth(),play.viewport.GetHeight()), Common::kBitmap_Transparency);
+        screen_bmp->StretchBlt(tsc, RectWH(0, 0, play.GetMainViewport().GetWidth(),play.GetMainViewport().GetHeight()), Common::kBitmap_Transparency);
 
-        gfxDriver->ClearDrawList();
+        gfxDriver->ClearDrawLists();
 
         if (!gfxDriver->UsesMemoryBackBuffer())
         {
@@ -1072,10 +1072,10 @@ void engine_init_game_settings()
     play.rtint_level = 0;
     play.rtint_light = 0;
     play.text_speed_modifier = 0;
-    play.text_align = SCALIGN_LEFT;
+    play.text_align = kHAlignLeft;
     // Make the default alignment to the right with right-to-left text
     if (game.options[OPT_RIGHTLEFTWRITE])
-        play.text_align = SCALIGN_RIGHT;
+        play.text_align = kHAlignRight;
 
     play.speech_bubble_width = get_fixed_pixel_size(100);
     play.bg_frame=0;
@@ -1105,7 +1105,7 @@ void engine_init_game_settings()
     play.music_master_volume=100 + LegacyMusicMasterVolumeAdjustment;
     play.digital_master_volume = 100;
     play.screen_flipped=0;
-    play.offsets_locked=0;
+    play.ReleaseRoomCamera();
     play.cant_skip_speech = user_to_internal_skip_speech((SkipSpeechStyle)game.options[OPT_NOSKIPTEXT]);
     play.sound_volume = 255;
     play.speech_volume = 255;
@@ -1150,7 +1150,7 @@ void engine_init_game_settings()
     play.top_bar_font = -1;
     play.screenshot_width = 160;
     play.screenshot_height = 100;
-    play.speech_text_align = SCALIGN_CENTRE;
+    play.speech_text_align = kHAlignCenter;
     play.auto_use_walkto_points = 1;
     play.inventory_greys_out = 0;
     play.skip_speech_specific_key = 0;

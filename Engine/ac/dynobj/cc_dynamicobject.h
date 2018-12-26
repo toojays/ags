@@ -12,7 +12,7 @@
 //
 //=============================================================================
 //
-// 'C'-style script compiler
+// Managed script object interface.
 //
 //=============================================================================
 
@@ -42,9 +42,21 @@ struct ICCDynamicObject {
     virtual const char *GetType() = 0;
     // serialize the object into BUFFER (which is BUFSIZE bytes)
     // return number of bytes used
+    // TODO: pass savegame format version
     virtual int Serialize(const char *address, char *buffer, int bufsize) = 0;
 
     // Legacy support for reading and writing object values by their relative offset
+    //
+    // RE: GetFieldPtr()
+    // According to AGS script specification, when the old-string pointer or char array is passed
+    // as an argument, the byte-code does not include any specific command for the member variable
+    // retrieval and instructs to pass an address of the object itself with certain offset.
+    // This results in functions like StrCopy writing directly over object address.
+    // There may be other implementations, but the big question is: how to detect when this is
+    // necessary, because byte-code does not contain any distinct operation for this case.
+    // The worst thing here is that with the current byte-code structure we can never tell whether
+    // offset 0 means getting pointer to whole object or a pointer to its first field.
+    virtual const char* GetFieldPtr(const char *address, intptr_t offset)           = 0;
     virtual void    Read(const char *address, intptr_t offset, void *dest, int size) = 0;
     virtual uint8_t ReadInt8(const char *address, intptr_t offset)                  = 0;
     virtual int16_t ReadInt16(const char *address, intptr_t offset)                 = 0;
@@ -58,6 +70,7 @@ struct ICCDynamicObject {
 };
 
 struct ICCObjectReader {
+    // TODO: pass savegame format version
     virtual void Unserialize(int index, const char *objectType, const char *serializedData, int dataSize) = 0;
 };
 struct ICCStringClass {

@@ -18,6 +18,18 @@
 //namespace Common
 //{
 
+bool AreRectsIntersecting(const Rect &r1, const Rect &r2)
+{ // NOTE: remember that in AGS Y axis is pointed downwards
+    return r1.Left <= r2.Right && r1.Right >= r2.Left &&
+        r1.Top <= r2.Bottom && r1.Bottom >= r2.Top;
+}
+
+bool IsRectInsideRect(const Rect &place, const Rect &item)
+{
+    return item.Left >= place.Left && item.Right <= place.Right &&
+        item.Top >= place.Top && item.Bottom <= place.Bottom;
+}
+
 Size ProportionalStretch(int dest_w, int dest_h, int item_w, int item_h)
 {
     int width = item_w ? dest_w : 0;
@@ -37,18 +49,18 @@ Size ProportionalStretch(const Size &dest, const Size &item)
 
 int AlignInHRange(int x1, int x2, int off_x, int width, FrameAlignment align)
 {
-    if (align & kAlignRight)
+    if (align & kMAlignRight)
         return off_x + x2 - width;
-    else if (align & kAlignHCenter)
+    else if (align & kMAlignHCenter)
         return off_x + x1 + ((x2 - x1 + 1) >> 1) - (width >> 1);
     return off_x + x1; // kAlignLeft is default
 }
 
 int AlignInVRange(int y1, int y2, int off_y, int height, FrameAlignment align)
 {
-    if (align & kAlignBottom)
+    if (align & kMAlignBottom)
         return off_y + y2 - height;
-    else if (align & kAlignVCenter)
+    else if (align & kMAlignVCenter)
         return off_y + y1 + ((y2 - y1 + 1) >> 1) - (height >> 1);
     return off_y + y1; // kAlignTop is default
 }
@@ -73,6 +85,16 @@ Rect CenterInRect(const Rect &place, const Rect &item)
     return RectWH((place.GetWidth() >> 1) - (item.GetWidth() >> 1),
         (place.GetHeight() >> 1) - (item.GetHeight() >> 1),
         item.GetWidth(), item.GetHeight());
+}
+
+Rect ClampToRect(const Rect &place, const Rect &item)
+{
+    return Rect(
+        AGSMath::Clamp(item.Left, place.Left, place.Right),
+        AGSMath::Clamp(item.Top, place.Top, place.Bottom),
+        AGSMath::Clamp(item.Right, place.Left, place.Right),
+        AGSMath::Clamp(item.Bottom, place.Top, place.Bottom)
+    );
 }
 
 Rect PlaceInRect(const Rect &place, const Rect &item, const RectPlacement &placement)

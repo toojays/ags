@@ -46,9 +46,9 @@ namespace AGS.Editor
         private int _selectedArea = 1;
 		private int _drawingWithArea;
         private bool _mouseDown = false;
+        // Mouse hold/release positions in ROOM's coordinates
         private int _mouseDownX, _mouseDownY;
         private int _currentMouseX, _currentMouseY;
-        private bool _highResMask = false;
         private bool _shouldSetDrawModeOnMouseUp = false;
 
         private static AreaDrawMode _drawMode = AreaDrawMode.Select;
@@ -57,7 +57,7 @@ namespace AGS.Editor
         private static Cursor _selectCursor;
 		private static bool _greyedOutMasks = true;
 
-        public BaseAreasEditorFilter(Panel displayPanel, Room room, bool highResMask)
+        public BaseAreasEditorFilter(Panel displayPanel, Room room)
         {
             if (!_registeredIcons)
             {
@@ -76,7 +76,6 @@ namespace AGS.Editor
 
             _tooltip = new ToolTip();
             _tooltip.IsBalloon = true;
-            _highResMask = highResMask;
             _toolbarIcons = new List<MenuCommand>();
             _toolbarIcons.Add(new MenuCommand(SELECT_AREA_COMMAND, "Select area (Ctrl+C)", "SelectAreaIcon"));
             _toolbarIcons.Add(new MenuCommand(DRAW_LINE_COMMAND, "Line tool (Ctrl+N)", "DrawLineIcon"));
@@ -165,30 +164,29 @@ namespace AGS.Editor
 
         public virtual void Paint(Graphics graphics, RoomEditorState state)
         {
+            int roomPixel = state.RoomSizeToWindow(1);
+            int halfRoomPixel = roomPixel / 2;
             if ((_mouseDown) && (_drawMode == AreaDrawMode.Line))
             {
-                int penWidth = (int)GetScaleFactor(state);
-                int extraOffset = penWidth / 2;
+                int penWidth = (int)(roomPixel * GetHintScaleFactor(state));
                 Pen pen = GetPenForArea(_drawingWithArea);
                 pen = new Pen(pen.Color, penWidth);
-                graphics.DrawLine(pen, state.RoomXToWindow(_mouseDownX) + extraOffset,
-                    state.RoomYToWindow(_mouseDownY) + extraOffset,
-                    state.RoomXToWindow(_currentMouseX) + extraOffset,
-                    state.RoomYToWindow(_currentMouseY) + extraOffset);
+                graphics.DrawLine(pen, state.RoomXToWindow(_mouseDownX) + halfRoomPixel,
+                    state.RoomYToWindow(_mouseDownY) + halfRoomPixel,
+                    state.RoomXToWindow(_currentMouseX) + halfRoomPixel,
+                    state.RoomYToWindow(_currentMouseY) + halfRoomPixel);
                 pen.Dispose();
             }
 			else if ((_mouseDown) && (_drawMode == AreaDrawMode.Rectangle))
 			{
-				int mousePressedAtX = state.RoomXToWindow(_mouseDownX);
-				int mousePressedAtY = state.RoomYToWindow(_mouseDownY);
-				int mouseNowAtX = state.RoomXToWindow(_currentMouseX);
-				int mouseNowAtY = state.RoomYToWindow(_currentMouseY);
-				EnsureSmallestNumberIsFirst(ref mousePressedAtX, ref mouseNowAtX);
-				EnsureSmallestNumberIsFirst(ref mousePressedAtY, ref mouseNowAtY);
-                mouseNowAtX += (int)GetScaleFactor(state) - 1;
-                mouseNowAtY += (int)GetScaleFactor(state) - 1;
-
-				graphics.FillRectangle(GetBrushForArea(_drawingWithArea), mousePressedAtX, mousePressedAtY, mouseNowAtX - mousePressedAtX + 1, mouseNowAtY - mousePressedAtY + 1);
+                int x1 = state.RoomXToWindow(_mouseDownX);
+                int y1 = state.RoomYToWindow(_mouseDownY);
+                int x2 = state.RoomXToWindow(_currentMouseX);
+                int y2 = state.RoomYToWindow(_currentMouseY);
+                EnsureSmallestNumberIsFirst(ref x1, ref x2);
+                EnsureSmallestNumberIsFirst(ref y1, ref y2);
+                graphics.FillRectangle(GetBrushForArea(_drawingWithArea),
+                    x1, y1, x2 - x1 + roomPixel, y2 - y1 + roomPixel);
 			}
 		}
 
@@ -220,24 +218,19 @@ namespace AGS.Editor
 			return Pens.Red;
 		}
 
-        private float GetScaleFactor(RoomEditorState state)
+        // Gets the scale factor for drawing auxiliary stuff on screen.
+        // This does not have any relation to screen/room coordinate conversion,
+        // only lets to have extra size for some hint lines etc, in hi-res games.
+        private float GetHintScaleFactor(RoomEditorState state)
         {
-            if (_room.Resolution == RoomResolution.HighRes)
+            if (_room.Resolution == RoomResolution.HighRes ||
+                Factory.AGSEditor.CurrentGame.IsHighResolution)
             {
-                if (_highResMask)
-                {
-                    return state.Scale;
-                }
-                return state.Scale * 2f;
-            }
-            else if (Factory.AGSEditor.CurrentGame.IsHighResolution)
-            {
-                // Low-res room in hi-res game
-                return state.Scale * 2f;
+                return 2f;
             }
             else
             {
-                return state.Scale;
+                return 1f;
             }
         }
 
@@ -473,7 +466,7 @@ namespace AGS.Editor
 			}
 			else if (command == IMPORT_MASK_COMMAND)
 			{
-				string fileName = Factory.GUIController.ShowOpenFileDialog("Select mask to import...", GUIController.IMAGE_FILE_FILTER);
+				string fileName = Factory.GUIController.ShowOpenFileDialog("Select mask to import...", Constants.IMAGE_FILE_FILTER);
 				if (fileName != null)
 				{
 					ImportMaskFromFile(fileName);
@@ -481,7 +474,7 @@ namespace AGS.Editor
 			}
             else if (command == EXPORT_MASK_COMMAND)
             {
-                string fileName = Factory.GUIController.ShowSaveFileDialog("Save mask as...", GUIController.IMAGE_FILE_FILTER);
+                string fileName = Factory.GUIController.ShowSaveFileDialog("Save mask as...", Constants.IMAGE_FILE_FILTER);
                 if (fileName != null)
                 {
                     ExportMaskFromFile(fileName);

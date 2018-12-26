@@ -189,6 +189,16 @@ namespace AGS.Editor
 					}
 				}
 			}
+            else if (propertyName == "PopupStyle")
+            {
+                NormalGUI normalGui = (NormalGUI)_gui;
+                if (normalGui != null)
+                {
+                    // Force Modal GUIs not visible by default
+                    if (normalGui.PopupStyle == GUIPopupStyle.PopupModal)
+                        normalGui.Visible = false;
+                }
+            }
         }
 
         public GUI GuiToEdit
@@ -263,8 +273,7 @@ namespace AGS.Editor
 
         private void UpdateScrollableWindowSize()
         {
-            bgPanel.AutoScroll = true;
-            lblDummyScrollSizer.Location = new Point(_state.GUISizeToWindow(_gui.EditorWidth), _state.GUISizeToWindow(_gui.EditorHeight));
+            bgPanel.AutoScrollMinSize = new Size(_state.GUISizeToWindow(_gui.EditorWidth), _state.GUISizeToWindow(_gui.EditorHeight));
         }
 
         private void bgPanel_Paint(object sender, PaintEventArgs e)
@@ -1208,17 +1217,16 @@ namespace AGS.Editor
 
         private void sldZoomLevel_Scroll(object sender, EventArgs e)
         {
-            float oldScale = _state.Scale;
-            _state.Scale = sldZoomLevel.Value * ZOOM_STEP_VALUE * 0.01f;
-
-            int newValue = (int)((bgPanel.VerticalScroll.Value / oldScale) * _state.Scale);
-            bgPanel.VerticalScroll.Value = Math.Min(newValue, bgPanel.VerticalScroll.Maximum);
-            newValue = (int)((bgPanel.HorizontalScroll.Value / oldScale) * _state.Scale);
-            bgPanel.HorizontalScroll.Value = Math.Min(newValue, bgPanel.HorizontalScroll.Maximum);
-
             lblZoomInfo.Text = String.Format("{0}%", sldZoomLevel.Value * ZOOM_STEP_VALUE);
 
+            int oldPosX = _state.WindowSizeToGUI(bgPanel.HorizontalScroll.Value);
+            int oldPosY = _state.WindowSizeToGUI(bgPanel.VerticalScroll.Value);
+
+            _state.Scale = sldZoomLevel.Value * ZOOM_STEP_VALUE * 0.01f;
             UpdateScrollableWindowSize();
+
+            bgPanel.HorizontalScroll.Value = _state.GUISizeToWindow(oldPosX);
+            bgPanel.VerticalScroll.Value = _state.GUISizeToWindow(oldPosY);
             bgPanel.Invalidate();
         }
 
@@ -1250,12 +1258,12 @@ namespace AGS.Editor
 
         internal int GUIXToWindow(int x)
         {
-            return (int)(x * _scale - _scrollOffsetX);
+            return (int)(x * _scale) - _scrollOffsetX;
         }
 
         internal int GUIYToWindow(int y)
         {
-            return (int)(y * _scale - _scrollOffsetY);
+            return (int)(y * _scale) - _scrollOffsetY;
         }
 
         internal int GUISizeToWindow(int sz)
@@ -1278,8 +1286,8 @@ namespace AGS.Editor
             {
                 float oldScale = _scale;
                 _scale = value;
-                _scrollOffsetX = (int)(-(_scrollOffsetX / oldScale) * _scale);
-                _scrollOffsetY = (int)(-(_scrollOffsetY / oldScale) * _scale);
+                _scrollOffsetX = (int)((_scrollOffsetX / oldScale) * _scale);
+                _scrollOffsetY = (int)((_scrollOffsetY / oldScale) * _scale);
             }
         }
 
@@ -1289,8 +1297,8 @@ namespace AGS.Editor
         /// <param name="scrollPt">Scroll position in window coordinates.</param>
         internal void UpdateScroll(Point scrollPt)
         {
-            _scrollOffsetX = (int)(-(scrollPt.X / _scale) * _scale);
-            _scrollOffsetY = (int)(-(scrollPt.Y / _scale) * _scale);
+            _scrollOffsetX = -scrollPt.X;
+            _scrollOffsetY = -scrollPt.Y;
         }
     }
 }

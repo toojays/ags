@@ -73,7 +73,7 @@ bool enable_greyed_out_masks = true;
 bool outlineGuiObjects;
 color*palette;
 GameSetupStruct thisgame;
-SpriteCache spriteset(MAX_STATIC_SPRITES + 2, thisgame.SpriteInfos);
+SpriteCache spriteset(thisgame.SpriteInfos);
 GUIMain tempgui;
 const char*sprsetname = "acsprset.spr";
 const char *old_editor_data_file = "editor.dat";
@@ -85,8 +85,9 @@ const int ROOM_TEMPLATE_ID_FILE_SIGNATURE = 0x74673812;
 bool spritesModified = false;
 roomstruct thisroom;
 bool roomModified = false;
-Common::Bitmap *drawBuffer = NULL;
-Common::Bitmap *undoBuffer = NULL;
+std::unique_ptr<AGSBitmap> drawBuffer;
+std::unique_ptr<AGSBitmap> undoBuffer;
+std::unique_ptr<AGSBitmap> roomBkgBuffer;
 int loaded_room_number = -1;
 
 GameDataVersion loaded_game_file_version = kGameVersion_Current;
@@ -664,31 +665,29 @@ enum RoomAreaMask
     Regions
 };
 
-Common::Bitmap *get_bitmap_for_mask(roomstruct *roomptr, RoomAreaMask maskType) 
+// TODO: mask's bitmap, as well as coordinate factor, should be a property of the room or some room's mask class
+Common::Bitmap *get_bitmap_for_mask(roomstruct *roomptr, RoomAreaMask maskType)
 {
-	if (maskType == RoomAreaMask::None) 
-	{
-		return NULL;
-	}
-
-	Common::Bitmap *source = NULL;
 	switch (maskType) 
 	{
-	case RoomAreaMask::Hotspots:
-		source = roomptr->lookat;
-		break;
-	case RoomAreaMask::Regions:
-		source = roomptr->regions;
-		break;
-	case RoomAreaMask::WalkableAreas:
-		source = roomptr->walls;
-		break;
-	case RoomAreaMask::WalkBehinds:
-		source = roomptr->object;
-		break;
+	case RoomAreaMask::Hotspots: return roomptr->lookat;
+	case RoomAreaMask::Regions: return roomptr->regions;
+	case RoomAreaMask::WalkableAreas: return roomptr->walls;
+	case RoomAreaMask::WalkBehinds: return roomptr->object;
 	}
+    return NULL;
+}
 
-	return source;
+float get_scale_for_mask(roomstruct *roomptr, RoomAreaMask maskType)
+{
+    switch (maskType)
+    {
+    case RoomAreaMask::Hotspots: return 1.f / roomptr->resolution;
+    case RoomAreaMask::Regions: return 1.f / roomptr->resolution;
+    case RoomAreaMask::WalkableAreas: return 1.f / roomptr->resolution;
+    case RoomAreaMask::WalkBehinds: return 1.f;
+    }
+    return 0.f;
 }
 
 void copy_walkable_to_regions (void *roomptr) {
@@ -698,26 +697,30 @@ void copy_walkable_to_regions (void *roomptr) {
 
 int get_mask_pixel(void *roomptr, int maskType, int x, int y)
 {
-	Common::Bitmap *mask = get_bitmap_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
-	return mask->GetPixel(x, y);
+    Common::Bitmap *mask = get_bitmap_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
+    float scale = get_scale_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
+	return mask->GetPixel(x * scale, y * scale);
 }
 
 void draw_line_onto_mask(void *roomptr, int maskType, int x1, int y1, int x2, int y2, int color)
 {
 	Common::Bitmap *mask = get_bitmap_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
-	mask->DrawLine(Line(x1, y1, x2, y2), color);
+    float scale = get_scale_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
+	mask->DrawLine(Line(x1 * scale, y1 * scale, x2 * scale, y2 * scale), color);
 }
 
 void draw_filled_rect_onto_mask(void *roomptr, int maskType, int x1, int y1, int x2, int y2, int color)
 {
 	Common::Bitmap *mask = get_bitmap_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
-    mask->FillRect(Rect(x1, y1, x2, y2), color);
+    float scale = get_scale_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
+    mask->FillRect(Rect(x1 * scale, y1 * scale, x2 * scale, y2 * scale), color);
 }
 
 void draw_fill_onto_mask(void *roomptr, int maskType, int x1, int y1, int color)
 {
 	Common::Bitmap *mask = get_bitmap_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
-    mask->FloodFill(x1, y1, color);
+    float scale = get_scale_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
+    mask->FloodFill(x1 * scale, y1 * scale, color);
 }
 
 void create_undo_buffer(void *roomptr, int maskType) 
@@ -727,13 +730,12 @@ void create_undo_buffer(void *roomptr, int maskType)
   {
     if ((undoBuffer->GetWidth() != mask->GetWidth()) || (undoBuffer->GetHeight() != mask->GetHeight())) 
     {
-      delete undoBuffer;
-      undoBuffer = NULL;
+      undoBuffer.reset();
     }
   }
   if (undoBuffer == NULL)
   {
-    undoBuffer = Common::BitmapHelper::CreateBitmap(mask->GetWidth(), mask->GetHeight(), mask->GetColorDepth());
+    undoBuffer.reset(Common::BitmapHelper::CreateBitmap(mask->GetWidth(), mask->GetHeight(), mask->GetColorDepth()));
   }
   undoBuffer->Blit(mask, 0, 0, 0, 0, mask->GetWidth(), mask->GetHeight());
 }
@@ -747,8 +749,7 @@ void clear_undo_buffer()
 {
   if (does_undo_buffer_exist()) 
   {
-    delete undoBuffer;
-    undoBuffer = NULL;
+    undoBuffer.reset();
   }
 }
 
@@ -757,7 +758,7 @@ void restore_from_undo_buffer(void *roomptr, int maskType)
   if (does_undo_buffer_exist())
   {
   	Common::Bitmap *mask = get_bitmap_for_mask((roomstruct*)roomptr, (RoomAreaMask)maskType);
-    mask->Blit(undoBuffer, 0, 0, 0, 0, mask->GetWidth(), mask->GetHeight());
+    mask->Blit(undoBuffer.get(), 0, 0, 0, 0, mask->GetWidth(), mask->GetHeight());
   }
 }
 
@@ -872,20 +873,21 @@ void draw_room_background(void *roomvoidptr, int hdc, int x, int y, int bgnum, f
 
 	if (drawBuffer != NULL) 
 	{
-		Common::Bitmap *depthConverted = Common::BitmapHelper::CreateBitmap(srcBlock->GetWidth(), srcBlock->GetHeight(), drawBuffer->GetColorDepth());
+        if (!roomBkgBuffer || roomBkgBuffer->GetSize() != srcBlock->GetSize() || roomBkgBuffer->GetColorDepth() != srcBlock->GetColorDepth())
+		    roomBkgBuffer.reset(new AGSBitmap(srcBlock->GetWidth(), srcBlock->GetHeight(), drawBuffer->GetColorDepth()));
     if (srcBlock->GetColorDepth() == 8)
     {
       select_palette(roomptr->bpalettes[bgnum]);
     }
 
-    depthConverted->Blit(srcBlock, 0, 0, 0, 0, srcBlock->GetWidth(), srcBlock->GetHeight());
+    roomBkgBuffer->Blit(srcBlock, 0, 0, 0, 0, srcBlock->GetWidth(), srcBlock->GetHeight());
 
     if (srcBlock->GetColorDepth() == 8)
     {
       unselect_palette();
     }
 
-	draw_area_mask(roomptr, depthConverted, (RoomAreaMask)maskType, selectedArea, maskTransparency);
+	draw_area_mask(roomptr, roomBkgBuffer.get(), (RoomAreaMask)maskType, selectedArea, maskTransparency);
 
     int srcX = 0, srcY = 0;
     int srcWidth = srcBlock->GetWidth();
@@ -893,27 +895,27 @@ void draw_room_background(void *roomvoidptr, int hdc, int x, int y, int bgnum, f
 
     if (x < 0)
     {
-      srcX = -x / scaleFactor;
-      x = 0;
-      srcWidth = drawBuffer->GetWidth() / scaleFactor + 1;
-      if (srcX + srcWidth > depthConverted->GetWidth())
+      srcX = (int)(-x / scaleFactor);
+      x += (int)(srcX * scaleFactor);
+      srcWidth = drawBuffer->GetWidth() / scaleFactor;
+      if (srcX + srcWidth > roomBkgBuffer->GetWidth())
       {
-        srcWidth = depthConverted->GetWidth() - srcX;
+        srcWidth = roomBkgBuffer->GetWidth() - srcX;
       }
     }
     if (y < 0)
     {
-      srcY = -y / scaleFactor;
-      y = 0;
-      srcHeight = drawBuffer->GetHeight() / scaleFactor + 1;
-      if (srcY + srcHeight > depthConverted->GetHeight())
+      srcY = (int)(-y / scaleFactor);
+      y += (int)(srcY * scaleFactor);
+      srcHeight = drawBuffer->GetHeight() / scaleFactor;
+      if (srcY + srcHeight > roomBkgBuffer->GetHeight())
       {
-        srcHeight = depthConverted->GetHeight() - srcY;
+        srcHeight = roomBkgBuffer->GetHeight() - srcY;
       }
     }
 
-		Cstretch_blit(depthConverted, drawBuffer, srcX, srcY, srcWidth, srcHeight, x, y, srcWidth * scaleFactor, srcHeight * scaleFactor);
-		delete depthConverted;
+		Cstretch_blit(roomBkgBuffer.get(), drawBuffer.get(), srcX, srcY, srcWidth, srcHeight,
+            x, y, (int)(srcWidth * scaleFactor), (int)(srcHeight * scaleFactor));
 	}
 	else {
 		drawBlockScaledAt(hdc, srcBlock, x, y, scaleFactor);
@@ -1237,8 +1239,14 @@ bool initialize_native()
 
 void shutdown_native()
 {
-  shutdown_font_renderer();
-	allegro_exit();
+    // We must dispose all native bitmaps before shutting down the library
+    drawBuffer.reset();
+    undoBuffer.reset();
+    roomBkgBuffer.reset();
+
+    shutdown_font_renderer();
+    spriteset.Reset();
+    allegro_exit();
     Common::AssetManager::DestroyInstance();
 }
 
@@ -2003,10 +2011,10 @@ void save_room(const char *files, roomstruct rstruc) {
       opty->WriteByte(rstruc.bscene_anim_speed);
       
       opty->WriteArrayOfInt8 ((int8_t*)&rstruc.ebpalShared[0], rstruc.num_bscenes);
+      curoffs = opty->GetPosition();
 
       delete opty;
 
-      curoffs = lenpos + 6 + rstruc.num_bscenes;
       for (gg = 1; gg < rstruc.num_bscenes; gg++)
         curoffs = save_lzw((char*)files, rstruc.ebscene[gg], rstruc.bpalettes[gg], curoffs);
 
@@ -2396,8 +2404,9 @@ void save_game(bool compressSprites)
 
 void CreateBuffer(int width, int height)
 {
-	drawBuffer = Common::BitmapHelper::CreateBitmap( width, height, 32);
-	drawBuffer->Clear(0x00D0D0D0);
+    if (!drawBuffer || drawBuffer->GetWidth() != width || drawBuffer->GetHeight() != height || drawBuffer->GetColorDepth() != 32)
+        drawBuffer.reset(new AGSBitmap(width, height, 32));
+    drawBuffer->Clear(0x00D0D0D0);
 }
 
 void DrawSpriteToBuffer(int sprNum, int x, int y, float scale) {
@@ -2428,7 +2437,7 @@ void DrawSpriteToBuffer(int sprNum, int x, int y, float scale) {
 
 	if ((thisgame.SpriteInfos[sprNum].Flags & SPF_ALPHACHANNEL) != 0)
 	{
-		if (scale > 1.0f)
+		if (scale != 1.0f)
 		{
 			Common::Bitmap *resizedImage = Common::BitmapHelper::CreateBitmap(drawWidth, drawHeight, imageToDraw->GetColorDepth());
 			resizedImage->StretchBlt(imageToDraw, RectWH(0, 0, imageToDraw->GetWidth(), imageToDraw->GetHeight()),
@@ -2442,7 +2451,7 @@ void DrawSpriteToBuffer(int sprNum, int x, int y, float scale) {
 	}
 	else
 	{
-		Cstretch_sprite(drawBuffer, imageToDraw, x, y, drawWidth, drawHeight);
+		Cstretch_sprite(drawBuffer.get(), imageToDraw, x, y, drawWidth, drawHeight);
 	}
 
 	if (imageToDraw != todraw)
@@ -2452,8 +2461,6 @@ void DrawSpriteToBuffer(int sprNum, int x, int y, float scale) {
 void RenderBufferToHDC(int hdc) 
 {
 	blit_to_hdc(drawBuffer->GetAllegroBitmap(), (HDC)hdc, 0, 0, 0, 0, drawBuffer->GetWidth(), drawBuffer->GetHeight());
-	delete drawBuffer;
-	drawBuffer = NULL;
 }
 
 void UpdateSpriteFlags(SpriteFolder ^folder) 
@@ -3009,9 +3016,10 @@ void ConvertGUIToBinaryFormat(GUI ^guiObj, GUIMain *gui)
 	gui->Y = normalGui->Top;
 	gui->Width = normalGui->Width;
 	gui->Height = normalGui->Height;
-    gui->Flags = (normalGui->Clickable) ? 0 : Common::kGUIMain_NoClick;
+    gui->SetClickable(normalGui->Clickable);
+    gui->SetVisible(normalGui->Visible);
     gui->PopupAtMouseY = normalGui->PopupYPos;
-    gui->PopupStyle = (Common::GUIPopupStyle)normalGui->Visibility;
+    gui->PopupStyle = (Common::GUIPopupStyle)normalGui->PopupStyle;
     gui->ZOrder = normalGui->ZOrder;
     gui->FgColor = normalGui->BorderColor;
     gui->SetTransparencyAsPercentage(normalGui->Transparency);
@@ -3021,7 +3029,7 @@ void ConvertGUIToBinaryFormat(GUI ^guiObj, GUIMain *gui)
     TextWindowGUI^ twGui = dynamic_cast<TextWindowGUI^>(guiObj);
 	gui->Width = twGui->EditorWidth;
 	gui->Height = twGui->EditorHeight;
-    gui->Flags = Common::kGUIMain_TextWindow;
+    gui->SetTextWindow(true);
     gui->PopupStyle = Common::kGUIPopupModal;
 	gui->Padding = twGui->Padding;
     gui->FgColor = twGui->TextColor;
@@ -3053,12 +3061,11 @@ void ConvertGUIToBinaryFormat(GUI ^guiObj, GUIMain *gui)
 		  guibuts[numguibuts].CurrentImage = guibuts[numguibuts].Image;
 		  guibuts[numguibuts].MouseOverImage = button->MouseoverImage;
 		  guibuts[numguibuts].PushedImage = button->PushedImage;
-		  guibuts[numguibuts].TextAlignment = (int)button->TextAlignment;
+		  guibuts[numguibuts].TextAlignment = (::FrameAlignment)button->TextAlignment;
           guibuts[numguibuts].ClickAction[Common::kMouseLeft] = (Common::GUIClickAction)button->ClickAction;
 		  guibuts[numguibuts].ClickData[Common::kMouseLeft] = button->NewModeNumber;
-          guibuts[numguibuts].Flags = (button->ClipImage) ? Common::kGUICtrl_Clip : 0;
-          Common::String text = ConvertStringToNativeString(button->Text, GUIBUTTON_TEXTLENGTH);
-          guibuts[numguibuts].SetText(text);
+          guibuts[numguibuts].SetClipImage(button->ClipImage);
+          guibuts[numguibuts].SetText(ConvertStringToNativeString(button->Text));
           guibuts[numguibuts].EventHandlers[0] = ConvertStringToNativeString(button->OnClick);
 		  
           gui->CtrlRefs[gui->ControlCount] = (Common::kGUIButton << 16) | numguibuts;
@@ -3071,8 +3078,7 @@ void ConvertGUIToBinaryFormat(GUI ^guiObj, GUIMain *gui)
           guilabels.push_back(Common::GUILabel());
 		  guilabels[numguilabels].TextColor = label->TextColor;
 		  guilabels[numguilabels].Font = label->Font;
-		  guilabels[numguilabels].TextAlignment = (int)label->TextAlignment;
-		  guilabels[numguilabels].Flags = 0;
+		  guilabels[numguilabels].TextAlignment = (::HorAlignment)label->TextAlignment;
           Common::String text = ConvertStringToNativeString(label->Text);
 		  guilabels[numguilabels].SetText(text);
 
@@ -3086,8 +3092,7 @@ void ConvertGUIToBinaryFormat(GUI ^guiObj, GUIMain *gui)
           guitext.push_back(Common::GUITextBox());
 		  guitext[numguitext].TextColor = textbox->TextColor;
 		  guitext[numguitext].Font = textbox->Font;
-		  guitext[numguitext].Flags = 0;
-          guitext[numguitext].TextBoxFlags = (textbox->ShowBorder) ? 0 : Common::kTextBox_NoBorder;
+          guitext[numguitext].SetShowBorder(textbox->ShowBorder);
           guitext[numguitext].EventHandlers[0] = ConvertStringToNativeString(textbox->OnActivate);
 
 		  gui->CtrlRefs[gui->ControlCount] = (Common::kGUITextBox << 16) | numguitext;
@@ -3100,12 +3105,12 @@ void ConvertGUIToBinaryFormat(GUI ^guiObj, GUIMain *gui)
           guilist.push_back(Common::GUIListBox());
 		  guilist[numguilist].TextColor = listbox->TextColor;
 		  guilist[numguilist].Font = listbox->Font;
-		  guilist[numguilist].BgColor = listbox->SelectedTextColor;
+		  guilist[numguilist].SelectedTextColor = listbox->SelectedTextColor;
 		  guilist[numguilist].SelectedBgColor = listbox->SelectedBackgroundColor;
-		  guilist[numguilist].TextAlignment = (int)listbox->TextAlignment;
-          guilist[numguilist].Flags = listbox->Translated ? Common::kGUICtrl_Translated : 0;
-          guilist[numguilist].ListBoxFlags = (listbox->ShowBorder) ? 0 : Common::kListBox_NoBorder;
-		  guilist[numguilist].ListBoxFlags |= (listbox->ShowScrollArrows) ? 0 : Common::kListBox_NoArrows;
+		  guilist[numguilist].TextAlignment = (::HorAlignment)listbox->TextAlignment;
+          guilist[numguilist].SetTranslated(listbox->Translated);
+          guilist[numguilist].SetShowBorder(listbox->ShowBorder);
+		  guilist[numguilist].SetShowArrows(listbox->ShowScrollArrows);
           guilist[numguilist].EventHandlers[0] = ConvertStringToNativeString(listbox->OnSelectionChanged);
 
 		  gui->CtrlRefs[gui->ControlCount] = (Common::kGUIListBox << 16) | numguilist;
@@ -3146,7 +3151,6 @@ void ConvertGUIToBinaryFormat(GUI ^guiObj, GUIMain *gui)
           guibuts.push_back(Common::GUIButton());
 		  guibuts[numguibuts].Image = textwindowedge->Image;
 		  guibuts[numguibuts].CurrentImage = guibuts[numguibuts].Image;
-		  guibuts[numguibuts].Flags = 0;
 		  
 		  gui->CtrlRefs[gui->ControlCount] = (Common::kGUIButton << 16) | numguibuts;
 		  gui->Controls[gui->ControlCount] = &guibuts[numguibuts];
@@ -3824,13 +3828,14 @@ Game^ import_compiled_game_dta(const char *fileName)
 		else 
 		{
 			newGui = gcnew NormalGUI(1, 1);
-			((NormalGUI^)newGui)->Clickable = ((guis[i].Flags & Common::kGUIMain_NoClick) == 0);
+            ((NormalGUI^)newGui)->Clickable = guis[i].IsClickable();
+            ((NormalGUI^)newGui)->Visible = guis[i].IsVisible();
 			((NormalGUI^)newGui)->Top = guis[i].Y;
 			((NormalGUI^)newGui)->Left = guis[i].X;
 			((NormalGUI^)newGui)->Width = (guis[i].Width > 0) ? guis[i].Width : 1;
 			((NormalGUI^)newGui)->Height = (guis[i].Height > 0) ? guis[i].Height : 1;
 			((NormalGUI^)newGui)->PopupYPos = guis[i].PopupAtMouseY;
-			((NormalGUI^)newGui)->Visibility = (GUIVisibility)guis[i].PopupStyle;
+			((NormalGUI^)newGui)->PopupStyle = (GUIPopupStyle)guis[i].PopupStyle;
 			((NormalGUI^)newGui)->ZOrder = guis[i].ZOrder;
 			((NormalGUI^)newGui)->OnClick = gcnew String(guis[i].OnClickHandler);
       ((NormalGUI^)newGui)->BorderColor = guis[i].FgColor;
@@ -3865,10 +3870,10 @@ Game^ import_compiled_game_dta(const char *fileName)
 					newButton->Image = copyFrom->Image;
 					newButton->MouseoverImage = copyFrom->MouseOverImage;
 					newButton->PushedImage = copyFrom->PushedImage;
-					newButton->TextAlignment = (TextAlignment)copyFrom->TextAlignment;
+					newButton->TextAlignment = (AGS::Types::FrameAlignment)copyFrom->TextAlignment;
                     newButton->ClickAction = (GUIClickAction)copyFrom->ClickAction[Common::kMouseLeft];
 					newButton->NewModeNumber = copyFrom->ClickData[Common::kMouseLeft];
-                    newButton->ClipImage = (copyFrom->Flags & Common::kGUICtrl_Clip) ? true : false;
+                    newButton->ClipImage = copyFrom->IsClippingImage();
 					newButton->Text = gcnew String(copyFrom->GetText());
 					newButton->OnClick = gcnew String(copyFrom->EventHandlers[0]);
 				}
@@ -3881,7 +3886,7 @@ Game^ import_compiled_game_dta(const char *fileName)
 				newControl = newLabel;
 				newLabel->TextColor = copyFrom->TextColor;
 				newLabel->Font = copyFrom->Font;
-				newLabel->TextAlignment = (LabelTextAlignment)copyFrom->TextAlignment;
+				newLabel->TextAlignment = (AGS::Types::HorizontalAlignment)copyFrom->TextAlignment;
 				newLabel->Text = gcnew String(copyFrom->GetText());
 				break;
 				}
@@ -3892,7 +3897,7 @@ Game^ import_compiled_game_dta(const char *fileName)
 				  newControl = newTextbox;
 				  newTextbox->TextColor = copyFrom->TextColor;
 				  newTextbox->Font = copyFrom->Font;
-                  newTextbox->ShowBorder = (copyFrom->TextBoxFlags & Common::kTextBox_NoBorder) ? false : true;
+                  newTextbox->ShowBorder = copyFrom->IsBorderShown();
 				  newTextbox->Text = gcnew String(copyFrom->Text);
 				  newTextbox->OnActivate = gcnew String(copyFrom->EventHandlers[0]);
 				  break;
@@ -3904,12 +3909,12 @@ Game^ import_compiled_game_dta(const char *fileName)
 				  newControl = newListbox;
 				  newListbox->TextColor = copyFrom->TextColor;
 				  newListbox->Font = copyFrom->Font; 
-				  newListbox->SelectedTextColor = copyFrom->BgColor;
+				  newListbox->SelectedTextColor = copyFrom->SelectedTextColor;
 				  newListbox->SelectedBackgroundColor = copyFrom->SelectedBgColor;
-				  newListbox->TextAlignment = (ListBoxTextAlignment)copyFrom->TextAlignment;
-				  newListbox->ShowBorder = ((copyFrom->ListBoxFlags & Common::kListBox_NoBorder) == 0);
-				  newListbox->ShowScrollArrows = ((copyFrom->ListBoxFlags & Common::kListBox_NoArrows) == 0);
-                  newListbox->Translated = (copyFrom->Flags & Common::kGUICtrl_Translated) != 0;
+				  newListbox->TextAlignment = (AGS::Types::HorizontalAlignment)copyFrom->TextAlignment;
+				  newListbox->ShowBorder = copyFrom->IsBorderShown();
+				  newListbox->ShowScrollArrows = copyFrom->AreArrowsShown();
+                  newListbox->Translated = copyFrom->IsTranslated();
 				  newListbox->OnSelectionChanged = gcnew String(copyFrom->EventHandlers[0]);
 				  break;
 				}
@@ -3945,6 +3950,9 @@ Game^ import_compiled_game_dta(const char *fileName)
 			newControl->Left = curObj->X;
 			newControl->Top = curObj->Y;
 			newControl->ZOrder = curObj->ZOrder;
+            newControl->Clickable = curObj->IsClickable();
+            newControl->Enabled = curObj->IsEnabled();
+            newControl->Visible = curObj->IsVisible();
 			newControl->ID = j;
 			newControl->Name = gcnew String(curObj->Name);
 			newGui->Controls->Add(newControl);

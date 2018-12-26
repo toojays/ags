@@ -76,7 +76,6 @@ extern Bitmap *walkable_areas_temp;
 extern IGraphicsDriver *gfxDriver;
 extern Bitmap **actsps;
 extern int source_text_length;
-extern int offsetx, offsety;
 extern int is_text_overlay;
 extern int said_speech_line;
 extern int numscreenover;
@@ -85,7 +84,6 @@ extern int our_eip;
 extern int update_music_at;
 extern int current_screen_resolution_multiplier;
 extern int cur_mode;
-extern int screen_is_dirty;
 extern CCCharacter ccDynamicCharacter;
 extern CCInventory ccDynamicInv;
 
@@ -177,7 +175,10 @@ void Character_AddWaypoint(CharacterInfo *chaa, int x, int y) {
 
     MoveList *cmls = &mls[chaa->walking % TURNING_AROUND];
     if (cmls->numstage >= MAXNEEDSTAGES)
-        quit("!MoveCharacterPath: move is too complex, cannot add any further paths");
+    {
+        debug_script_warn("Character_AddWaypoint: move is too complex, cannot add any further paths");
+        return;
+    }
 
     cmls->pos[cmls->numstage] = (x << 16) + y;
     // They're already walking there anyway
@@ -600,9 +601,7 @@ void Character_LockView(CharacterInfo *chap, int vii) {
 void Character_LockViewEx(CharacterInfo *chap, int vii, int stopMoving) {
 
     if ((vii < 1) || (vii > game.numviews)) {
-        char buffer[150];
-        sprintf (buffer, "!SetCharacterView: invalid view number (You said %d, max is %d)", vii, game.numviews);
-        quit(buffer);
+        quitprintf("!SetCharacterView: invalid view number (You said %d, max is %d)", vii, game.numviews);
     }
     vii--;
 
@@ -623,6 +622,14 @@ void Character_LockViewEx(CharacterInfo *chap, int vii, int stopMoving) {
     chap->flags|=CHF_FIXVIEW;
     chap->pic_xoffs = 0;
     chap->pic_yoffs = 0;
+}
+
+void Character_LockViewAligned_Old(CharacterInfo *chap, int vii, int loop, int align) {
+    Character_LockViewAlignedEx(chap, vii, loop, ConvertLegacyScriptAlignment((LegacyScriptAlignment)align), STOP_MOVING);
+}
+
+void Character_LockViewAlignedEx_Old(CharacterInfo *chap, int vii, int loop, int align, int stopMoving) {
+    Character_LockViewAlignedEx(chap, vii, loop, ConvertLegacyScriptAlignment((LegacyScriptAlignment)align), stopMoving);
 }
 
 void Character_LockViewAligned(CharacterInfo *chap, int vii, int loop, int align) {
@@ -647,11 +654,11 @@ void Character_LockViewAlignedEx(CharacterInfo *chap, int vii, int loop, int ali
     int newLeft = multiply_up_coordinate(chap->x) - game.SpriteInfos[newpic].Width / 2;
     int xdiff = 0;
 
-    if (align == SCALIGN_LEFT)
+    if (align & kMAlignLeft)
         xdiff = leftSide - newLeft;
-    else if (align == SCALIGN_CENTRE)
+    else if (align & kMAlignHCenter)
         xdiff = 0;
-    else if (align == SCALIGN_RIGHT)
+    else if (align & kMAlignRight)
         xdiff = (leftSide + game.SpriteInfos[sppic].Width) - (newLeft + game.SpriteInfos[newpic].Width);
     else
         quit("!SetCharacterViewEx: invalid alignment type specified");
@@ -754,9 +761,14 @@ void Character_RemoveTint(CharacterInfo *chaa) {
     }
 }
 
+int Character_GetHasExplicitTint_Old(CharacterInfo *ch)
+{
+    return ch->has_explicit_tint() || ch->has_explicit_light();
+}
+
 int Character_GetHasExplicitTint(CharacterInfo *ch)
 {
-    return ch->has_explicit_tint() || ((game.options[OPT_BASESCRIPTAPI] < kScriptAPI_v341) && ch->has_explicit_light());
+    return ch->has_explicit_tint();
 }
 
 void Character_Say(CharacterInfo *chaa, const char *text) {
@@ -933,7 +945,10 @@ void Character_SetSpeed(CharacterInfo *chaa, int xspeed, int yspeed) {
     if ((xspeed == 0) || (xspeed > 50) || (yspeed == 0) || (yspeed > 50))
         quit("!SetCharacterSpeedEx: invalid speed value");
     if (chaa->walking)
-        quit("!SetCharacterSpeedEx: cannot change speed while walking");
+    {
+        debug_script_warn("Character_SetSpeed: cannot change speed while walking");
+        return;
+    }
 
     chaa->walkspeed = xspeed;
 
@@ -1120,7 +1135,10 @@ void Character_SetActiveInventory(CharacterInfo *chaa, ScriptInvItem* iit) {
     }
 
     if (chaa->inv[iit->id] < 1)
-        quit("!SetActiveInventory: character doesn't have any of that inventory");
+    {
+        debug_script_warn("SetActiveInventory: character doesn't have any of that inventory");
+        return;
+    }
 
     chaa->activeinv = iit->id;
 
@@ -1463,7 +1481,10 @@ int Character_GetScaling(CharacterInfo *chaa) {
 void Character_SetScaling(CharacterInfo *chaa, int zoomlevel) {
 
     if ((chaa->flags & CHF_MANUALSCALING) == 0)
-        quit("!Character.Scaling: cannot set property unless ManualScaling is enabled");
+    {
+        debug_script_warn("Character.Scaling: cannot set property unless ManualScaling is enabled");
+        return;
+    }
     if ((zoomlevel < 5) || (zoomlevel > 200))
         quit("!Character.Scaling: scaling level must be between 5 and 200%");
 
@@ -1503,8 +1524,11 @@ void Character_SetSpeechColor(CharacterInfo *chaa, int ncol) {
 
 void Character_SetSpeechAnimationDelay(CharacterInfo *chaa, int newDelay)
 {
-	if (game.options[OPT_GLOBALTALKANIMSPD] != 0)
-        quit("!Character.SpeechAnimationDelay cannot be set when global speech animation speed is enabled");
+    if (game.options[OPT_GLOBALTALKANIMSPD] != 0)
+    {
+        debug_script_warn("Character.SpeechAnimationDelay cannot be set when global speech animation speed is enabled");
+        return;
+    }
 
     chaa->speech_anim_speed = newDelay;
 }
@@ -1536,7 +1560,7 @@ int Character_GetThinkingFrame(CharacterInfo *chaa)
     if (char_thinking == chaa->index_id)
         return chaa->thinkview > 0 ? chaa->frame : -1;
 
-    quit("!Character.ThinkingFrame: character is not currently thinking");
+    debug_script_warn("Character.ThinkingFrame: character is not currently thinking");
     return -1;
 }
 
@@ -1637,7 +1661,7 @@ int Character_GetSpeakingFrame(CharacterInfo *chaa) {
         }
     }
 
-    quit("!Character.SpeakingFrame: character is not currently speaking");
+    debug_script_warn("Character.SpeakingFrame: character is not currently speaking");
     return -1;
 }
 
@@ -2000,7 +2024,10 @@ void FindReasonableLoopForCharacter(CharacterInfo *chap) {
 void walk_or_move_character(CharacterInfo *chaa, int x, int y, int blocking, int direct, bool isWalk)
 {
     if (chaa->on != 1)
-        quit("!MoveCharacterBlocking: character is turned off and cannot be moved");
+    {
+        debug_script_warn("MoveCharacterBlocking: character is turned off and cannot be moved");
+        return;
+    }
 
     if ((direct == ANYWHERE) || (direct == 1))
         walk_character(chaa->index_id, x, y, 1, isWalk);
@@ -2159,7 +2186,7 @@ void CheckViewFrameForCharacter(CharacterInfo *chi) {
 
 Bitmap *GetCharacterImage(int charid, int *isFlipped) 
 {
-    if (!gfxDriver->HasAcceleratedStretchAndFlip())
+    if (!gfxDriver->HasAcceleratedTransform())
     {
         if (actsps[charid + MAX_INIT_SPR] != NULL) 
         {
@@ -2325,7 +2352,7 @@ void _DisplayThoughtCore(int chid, const char *displbuf) {
         // lucasarts-style, so we want a speech bubble actually above
         // their head (or if they have no think anim in Sierra-style)
         width = multiply_up_coordinate(play.speech_bubble_width);
-        xpp = (multiply_up_coordinate(game.chars[chid].x) - offsetx) - width / 2;
+        xpp = play.RoomToScreenX(multiply_up_coordinate(game.chars[chid].x)) - width / 2;
         if (xpp < 0)
             xpp = 0;
         // -1 will automatically put it above the char's head
@@ -2344,7 +2371,10 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
         quit("!DisplaySpeech: character has invalid view");
 
     if (is_text_overlay > 0)
-        quit("!DisplaySpeech: speech was already displayed (nested DisplaySpeech, perhaps room script and global script conflict?)");
+    {
+        debug_script_warn("DisplaySpeech: speech was already displayed (nested DisplaySpeech, perhaps room script and global script conflict?)");
+        return;
+    }
 
     EndSkippingUntilCharStops();
 
@@ -2391,10 +2421,11 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
     if (textcol == 0)
         textcol = 16;
 
+    Rect ui_view = play.GetUIViewport();
     int allowShrink = 0;
     int bwidth = widd;
     if (bwidth < 0)
-        bwidth = play.viewport.GetWidth()/2 + play.viewport.GetWidth()/4;
+        bwidth = ui_view.GetWidth()/2 + ui_view.GetWidth()/4;
 
     our_eip=151;
 
@@ -2467,7 +2498,7 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
         // the screen.
         our_eip=1501;
         if (tdxp < 0)
-            tdxp = multiply_up_coordinate(speakingChar->x) - offsetx;
+            tdxp = play.RoomToScreenX(multiply_up_coordinate(speakingChar->x));
         if (tdxp < 2)
             tdxp=2;
 
@@ -2497,7 +2528,7 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
         if (tdyp < 0) 
         {
             int sppic = views[speakingChar->view].loops[speakingChar->loop].frames[0].pic;
-            tdyp = multiply_up_coordinate(speakingChar->get_effective_y()) - offsety - get_fixed_pixel_size(5);
+            tdyp = play.RoomToScreenY(multiply_up_coordinate(speakingChar->get_effective_y())) - get_fixed_pixel_size(5);
             if (charextra[aschar].height < 1)
                 tdyp -= game.SpriteInfos[sppic].Height;
             else
@@ -2596,8 +2627,8 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
 
             // if they accidentally used a large full-screen image as the sierra-style
             // talk view, correct it
-            if ((game.options[OPT_SPEECHTYPE] != 3) && (bigx > play.viewport.GetWidth() - get_fixed_pixel_size(50)))
-                bigx = play.viewport.GetWidth() - get_fixed_pixel_size(50);
+            if ((game.options[OPT_SPEECHTYPE] != 3) && (bigx > ui_view.GetWidth() - get_fixed_pixel_size(50)))
+                bigx = ui_view.GetWidth() - get_fixed_pixel_size(50);
 
             if (widd > 0)
                 bwidth = widd - bigx;
@@ -2611,7 +2642,7 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
 
             if (game.options[OPT_SPEECHTYPE] == 3) {
                 // QFG4-style whole screen picture
-                closeupface = BitmapHelper::CreateBitmap(play.viewport.GetWidth(), play.viewport.GetHeight(), spriteset[viptr->loops[0].frames[0].pic]->GetColorDepth());
+                closeupface = BitmapHelper::CreateBitmap(ui_view.GetWidth(), ui_view.GetHeight(), spriteset[viptr->loops[0].frames[0].pic]->GetColorDepth());
                 closeupface->Clear(0);
                 if (xx < 0 && play.speech_portrait_placement)
                 {
@@ -2625,9 +2656,9 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
                 }
                 else
                 {
-                    view_frame_y = play.viewport.GetHeight()/2 - game.SpriteInfos[viptr->loops[0].frames[0].pic].Height/2;
+                    view_frame_y = ui_view.GetHeight()/2 - game.SpriteInfos[viptr->loops[0].frames[0].pic].Height/2;
                 }
-                bigx = play.viewport.GetWidth()/2 - get_fixed_pixel_size(20);
+                bigx = ui_view.GetWidth()/2 - get_fixed_pixel_size(20);
                 ovr_type = OVER_COMPLETE;
                 ovr_yp = 0;
                 tdyp = -1;  // center vertically
@@ -2666,7 +2697,7 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
                     tdxp += get_fixed_pixel_size(16);
                 }
 
-                int maxWidth = (play.viewport.GetWidth() - tdxp) - get_fixed_pixel_size(5) - 
+                int maxWidth = (ui_view.GetWidth() - tdxp) - get_fixed_pixel_size(5) -
                     get_textwindow_border_width (play.speech_textwindow_gui) / 2;
 
                 if (bwidth > maxWidth)
@@ -2686,7 +2717,7 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
                     tdxp = get_fixed_pixel_size(9);
                     if (play.speech_portrait_placement)
                     {
-                        overlay_x = (play.viewport.GetWidth() - bigx) - play.speech_portrait_x;
+                        overlay_x = (ui_view.GetWidth() - bigx) - play.speech_portrait_x;
                         int maxWidth = overlay_x - tdxp - get_fixed_pixel_size(9) - 
                             get_textwindow_border_width (play.speech_textwindow_gui) / 2;
                         if (bwidth > maxWidth)
@@ -2694,7 +2725,7 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
                     }
                     else
                     {
-                        overlay_x = (play.viewport.GetWidth() - bigx) - get_fixed_pixel_size(5);
+                        overlay_x = (ui_view.GetWidth() - bigx) - get_fixed_pixel_size(5);
                     }
                 }
                 else {
@@ -2756,11 +2787,11 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
                 views[speakingChar->view].loops[speakingChar->loop].frames[0].speed;
 
             if (widd < 0) {
-                bwidth = play.viewport.GetWidth()/2 + play.viewport.GetWidth()/6;
+                bwidth = ui_view.GetWidth()/2 + ui_view.GetWidth()/6;
                 // If they are close to the screen edge, make the text narrower
-                int relx = multiply_up_coordinate(speakingChar->x) - offsetx;
-                if ((relx < play.viewport.GetWidth() / 4) || (relx > play.viewport.GetWidth() - (play.viewport.GetWidth() / 4)))
-                    bwidth -= play.viewport.GetWidth() / 5;
+                int relx = play.RoomToScreenX(multiply_up_coordinate(speakingChar->x));
+                if ((relx < ui_view.GetWidth() / 4) || (relx > ui_view.GetWidth() - (ui_view.GetWidth() / 4)))
+                    bwidth -= ui_view.GetWidth() / 5;
             }
             /*   this causes the text to bob up and down as they talk
             tdxp = OVR_AUTOPLACE;
@@ -2791,7 +2822,7 @@ void _displayspeech(const char*texx, int aschar, int xx, int yy, int widd, int i
         closeupface = NULL;
     if (closeupface!=NULL)
         remove_screen_overlay(ovr_type);
-    screen_is_dirty = 1;
+    mark_screen_dirty();
     face_talking = -1;
     facetalkchar = NULL;
     our_eip=157;
@@ -3036,12 +3067,22 @@ RuntimeScriptValue Sc_Character_LockViewEx(void *self, const RuntimeScriptValue 
 }
 
 // void (CharacterInfo *chap, int vii, int loop, int align)
+RuntimeScriptValue Sc_Character_LockViewAligned_Old(void *self, const RuntimeScriptValue *params, int32_t param_count)
+{
+    API_OBJCALL_VOID_PINT3(CharacterInfo, Character_LockViewAligned_Old);
+}
+
+// void (CharacterInfo *chap, int vii, int loop, int align, int stopMoving)
+RuntimeScriptValue Sc_Character_LockViewAlignedEx_Old(void *self, const RuntimeScriptValue *params, int32_t param_count)
+{
+    API_OBJCALL_VOID_PINT4(CharacterInfo, Character_LockViewAlignedEx_Old);
+}
+
 RuntimeScriptValue Sc_Character_LockViewAligned(void *self, const RuntimeScriptValue *params, int32_t param_count)
 {
     API_OBJCALL_VOID_PINT3(CharacterInfo, Character_LockViewAligned);
 }
 
-// void (CharacterInfo *chap, int vii, int loop, int align, int stopMoving)
 RuntimeScriptValue Sc_Character_LockViewAlignedEx(void *self, const RuntimeScriptValue *params, int32_t param_count)
 {
     API_OBJCALL_VOID_PINT4(CharacterInfo, Character_LockViewAlignedEx);
@@ -3371,6 +3412,11 @@ RuntimeScriptValue Sc_Character_GetFrame(void *self, const RuntimeScriptValue *p
 RuntimeScriptValue Sc_Character_SetFrame(void *self, const RuntimeScriptValue *params, int32_t param_count)
 {
     API_OBJCALL_VOID_PINT(CharacterInfo, Character_SetFrame);
+}
+
+RuntimeScriptValue Sc_Character_GetHasExplicitTint_Old(void *self, const RuntimeScriptValue *params, int32_t param_count)
+{
+    API_OBJCALL_INT(CharacterInfo, Character_GetHasExplicitTint_Old);
 }
 
 RuntimeScriptValue Sc_Character_GetHasExplicitTint(void *self, const RuntimeScriptValue *params, int32_t param_count)
@@ -3732,7 +3778,7 @@ void ScPl_Character_Think(CharacterInfo *chaa, const char *texx, ...)
     Character_Think(chaa, scsf_buffer);
 }
 
-void RegisterCharacterAPI()
+void RegisterCharacterAPI(ScriptAPIVersion base_api, ScriptAPIVersion compat_api)
 {
     ccAddExternalObjectFunction("Character::AddInventory^2",            Sc_Character_AddInventory);
 	ccAddExternalObjectFunction("Character::AddWaypoint^2",             Sc_Character_AddWaypoint);
@@ -3757,8 +3803,16 @@ void RegisterCharacterAPI()
     ccAddExternalObjectFunction("Character::IsInteractionAvailable^1",  Sc_Character_IsInteractionAvailable);
 	ccAddExternalObjectFunction("Character::LockView^1",                Sc_Character_LockView);
 	ccAddExternalObjectFunction("Character::LockView^2",                Sc_Character_LockViewEx);
-	ccAddExternalObjectFunction("Character::LockViewAligned^3",         Sc_Character_LockViewAligned);
-	ccAddExternalObjectFunction("Character::LockViewAligned^4",         Sc_Character_LockViewAlignedEx);
+    if (base_api < kScriptAPI_v350)
+    {
+        ccAddExternalObjectFunction("Character::LockViewAligned^3", Sc_Character_LockViewAligned_Old);
+        ccAddExternalObjectFunction("Character::LockViewAligned^4", Sc_Character_LockViewAlignedEx_Old);
+    }
+    else
+    {
+        ccAddExternalObjectFunction("Character::LockViewAligned^3", Sc_Character_LockViewAligned);
+        ccAddExternalObjectFunction("Character::LockViewAligned^4", Sc_Character_LockViewAlignedEx);
+    }
 	ccAddExternalObjectFunction("Character::LockViewFrame^3",           Sc_Character_LockViewFrame);
 	ccAddExternalObjectFunction("Character::LockViewFrame^4",           Sc_Character_LockViewFrameEx);
 	ccAddExternalObjectFunction("Character::LockViewOffset^3",          Sc_Character_LockViewOffset);
@@ -3811,7 +3865,10 @@ void RegisterCharacterAPI()
 	ccAddExternalObjectFunction("Character::set_DiagonalLoops",         Sc_Character_SetDiagonalWalking);
 	ccAddExternalObjectFunction("Character::get_Frame",                 Sc_Character_GetFrame);
 	ccAddExternalObjectFunction("Character::set_Frame",                 Sc_Character_SetFrame);
-	ccAddExternalObjectFunction("Character::get_HasExplicitTint",       Sc_Character_GetHasExplicitTint);
+    if (base_api < kScriptAPI_v341)
+        ccAddExternalObjectFunction("Character::get_HasExplicitTint",       Sc_Character_GetHasExplicitTint_Old);
+    else
+	    ccAddExternalObjectFunction("Character::get_HasExplicitTint",       Sc_Character_GetHasExplicitTint);
 	ccAddExternalObjectFunction("Character::get_ID",                    Sc_Character_GetID);
 	ccAddExternalObjectFunction("Character::get_IdleView",              Sc_Character_GetIdleView);
 	ccAddExternalObjectFunction("Character::geti_InventoryQuantity",    Sc_Character_GetIInventoryQuantity);
@@ -3903,8 +3960,16 @@ void RegisterCharacterAPI()
     ccAddExternalFunctionForPlugin("Character::IsCollidingWithObject^1",   (void*)Character_IsCollidingWithObject);
     ccAddExternalFunctionForPlugin("Character::LockView^1",                (void*)Character_LockView);
     ccAddExternalFunctionForPlugin("Character::LockView^2",                (void*)Character_LockViewEx);
-    ccAddExternalFunctionForPlugin("Character::LockViewAligned^3",         (void*)Character_LockViewAligned);
-    ccAddExternalFunctionForPlugin("Character::LockViewAligned^4",         (void*)Character_LockViewAlignedEx);
+    if (base_api < kScriptAPI_v341)
+    {
+        ccAddExternalFunctionForPlugin("Character::LockViewAligned^3", (void*)Character_LockViewAligned_Old);
+        ccAddExternalFunctionForPlugin("Character::LockViewAligned^4", (void*)Character_LockViewAlignedEx_Old);
+    }
+    else
+    {
+        ccAddExternalFunctionForPlugin("Character::LockViewAligned^3", (void*)Character_LockViewAligned);
+        ccAddExternalFunctionForPlugin("Character::LockViewAligned^4", (void*)Character_LockViewAlignedEx);
+    }
     ccAddExternalFunctionForPlugin("Character::LockViewFrame^3",           (void*)Character_LockViewFrame);
     ccAddExternalFunctionForPlugin("Character::LockViewFrame^4",           (void*)Character_LockViewFrameEx);
     ccAddExternalFunctionForPlugin("Character::LockViewOffset^3",          (void*)Character_LockViewOffset);
@@ -3954,7 +4019,10 @@ void RegisterCharacterAPI()
     ccAddExternalFunctionForPlugin("Character::set_DiagonalLoops",         (void*)Character_SetDiagonalWalking);
     ccAddExternalFunctionForPlugin("Character::get_Frame",                 (void*)Character_GetFrame);
     ccAddExternalFunctionForPlugin("Character::set_Frame",                 (void*)Character_SetFrame);
-    ccAddExternalFunctionForPlugin("Character::get_HasExplicitTint",       (void*)Character_GetHasExplicitTint);
+    if (base_api < kScriptAPI_v341)
+        ccAddExternalFunctionForPlugin("Character::get_HasExplicitTint",       (void*)Character_GetHasExplicitTint_Old);
+    else
+        ccAddExternalFunctionForPlugin("Character::get_HasExplicitTint",       (void*)Character_GetHasExplicitTint);
     ccAddExternalFunctionForPlugin("Character::get_ID",                    (void*)Character_GetID);
     ccAddExternalFunctionForPlugin("Character::get_IdleView",              (void*)Character_GetIdleView);
     ccAddExternalFunctionForPlugin("Character::geti_InventoryQuantity",    (void*)Character_GetIInventoryQuantity);
