@@ -18,13 +18,22 @@
 #ifndef __AGS_EE_AC__DRAW_H
 #define __AGS_EE_AC__DRAW_H
 
+#include "util/stdtr1compat.h"
+#include TR1INCLUDE(memory)
 #include "core/types.h"
 #include "ac/common_defines.h"
 #include "gfx/gfx_def.h"
 #include "util/wgt2allg.h"
 
-namespace AGS { namespace Common { class Bitmap; } }
-namespace AGS { namespace Engine { class IDriverDependantBitmap; } }
+namespace AGS
+{
+    namespace Common
+    {
+        class Bitmap;
+        typedef stdtr1compat::shared_ptr<Common::Bitmap> PBitmap;
+    }
+    namespace Engine { class IDriverDependantBitmap; }
+}
 using namespace AGS; // FIXME later
 
 #define IS_ANTIALIAS_SPRITES usetup.enable_antialiasing && (play.disable_antialiasing == 0)
@@ -114,12 +123,13 @@ void setpal();
 extern AGS_INLINE int get_fixed_pixel_size(int pixels);
 extern AGS_INLINE int convert_to_low_res(int coord);
 extern AGS_INLINE int convert_back_to_high_res(int coord);
-// coordinate conversion game ---> screen
+// coordinate conversion game,script ---> screen
 extern AGS_INLINE int multiply_up_coordinate(int coord);
 extern AGS_INLINE void multiply_up_coordinates(int *x, int *y);
 extern AGS_INLINE void multiply_up_coordinates_round_up(int *x, int *y);
-// coordinate conversion screen ---> game
+// coordinate conversion screen ---> game,script
 extern AGS_INLINE int divide_down_coordinate(int coord);
+extern AGS_INLINE void divide_down_coordinates(int &x, int &y);
 extern AGS_INLINE int divide_down_coordinate_round_up(int coord);
 
 // Checks if the bitmap needs to be converted and **deletes original** if a new bitmap
@@ -127,14 +137,14 @@ extern AGS_INLINE int divide_down_coordinate_round_up(int coord);
 // TODO: this helper function was meant to remove bitmap deletion from the GraphicsDriver's
 // implementations while keeping code changes to minimum. The proper solution would probably
 // be to use shared pointers when storing Bitmaps, or make Bitmap reference-counted object.
-// WARNING: apparently MSVS2008 std::tr1::shared_ptr does not check for assigning same pointer,
-// this should be kept in mind!
 Common::Bitmap *ReplaceBitmapWithSupportedFormat(Common::Bitmap *bitmap);
 // Checks if the bitmap needs any kind of adjustments before it may be used
 // in AGS sprite operations. Also handles number of certain special cases
 // (old systems or uncommon gfx modes, and similar stuff).
 // Original bitmap **gets deleted** if a new bitmap had to be created.
 Common::Bitmap *PrepareSpriteForUse(Common::Bitmap *bitmap, bool has_alpha);
+// Same as above, but compatible for std::shared_ptr.
+Common::PBitmap PrepareSpriteForUse(Common::PBitmap bitmap, bool has_alpha);
 
 
 // Pointer to the real screen bitmap created by Allegro

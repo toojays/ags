@@ -16,18 +16,20 @@
 #include "ac/game_version.h"
 #include "ac/gamestate.h"
 #include "ac/gamesetupstruct.h"
-#include "ac/roomstruct.h"
+#include "ac/dynobj/scriptsystem.h"
 #include "debug/debug_log.h"
 #include "device/mousew32.h"
 #include "game/customproperties.h"
+#include "game/roomstruct.h"
 #include "util/alignedstream.h"
 #include "util/string_utils.h"
 
 using namespace AGS::Common;
 
 extern GameSetupStruct game;
-extern roomstruct thisroom;
+extern RoomStruct thisroom;
 extern CharacterInfo *playerchar;
+extern ScriptSystem scsystem;
 
 GameState::GameState()
 {
@@ -67,6 +69,8 @@ void GameState::SetMainViewport(const Rect &viewport)
 {
     _mainViewport.Position = FixupViewport(viewport, RectWH(game.size));
     Mouse::SetGraphicArea();
+    scsystem.viewport_width = divide_down_coordinate(_mainViewport.Position.GetWidth());
+    scsystem.viewport_height = divide_down_coordinate(_mainViewport.Position.GetHeight());
     _mainViewportHasChanged = true;
     // Update sub-viewports in case main viewport became smaller
     SetUIViewport(_uiViewport.Position);
@@ -105,13 +109,9 @@ void GameState::SetUIViewport(const Rect &viewport)
 
 void GameState::SetRoomViewport(const Rect &viewport)
 {
-    Rect real_view = FixupViewport(viewport, RectWH(_mainViewport.Position.GetSize()));
-    bool pos_changed = viewport.GetLT() != _roomViewport.Position.GetLT();
-    bool size_changed = viewport.GetSize() != _roomViewport.Position.GetSize();
-    _roomViewport.Position = viewport;
-    _roomViewportHasChanged = pos_changed | size_changed;
-    if (size_changed)
-        UpdateCameraSize();
+    _roomViewport.Position = FixupViewport(viewport, RectWH(_mainViewport.Position.GetSize()));
+    AdjustRoomToViewport();
+    _roomViewportHasChanged = true;
 }
 
 void GameState::UpdateViewports()
@@ -139,24 +139,23 @@ const RoomCamera &GameState::GetRoomCameraObj() const
 
 void GameState::SetRoomCameraSize(const Size &cam_size)
 {
-    _roomCamera.ScaleX = 0.f;
-    _roomCamera.ScaleY = 0.f;
-    SetCameraActualSize(cam_size);
-}
+    // TODO: currently we don't support having camera larger than room background
+    // (or rather - looking outside of the room background); look into this later
+    const Size real_room_sz = Size(multiply_up_coordinate(thisroom.Width), multiply_up_coordinate(thisroom.Height));
+    Size real_size = Size::Clamp(cam_size, Size(1, 1), real_room_sz);
 
-void GameState::SetRoomCameraAutoSize(float scalex, float scaley)
-{
-    _roomCamera.ScaleX = scalex;
-    _roomCamera.ScaleY = scaley;
-    UpdateCameraSize();
+    _roomCamera.Position.SetWidth(real_size.Width);
+    _roomCamera.Position.SetHeight(real_size.Height);
+    AdjustRoomToViewport();
+    _cameraHasChanged = true;
 }
 
 void GameState::SetRoomCameraAt(int x, int y)
 {
     int cw = _roomCamera.Position.GetWidth();
     int ch = _roomCamera.Position.GetHeight();
-    int room_width = multiply_up_coordinate(thisroom.width);
-    int room_height = multiply_up_coordinate(thisroom.height);
+    int room_width = multiply_up_coordinate(thisroom.Width);
+    int room_height = multiply_up_coordinate(thisroom.Height);
     x = Math::Clamp(x, 0, room_width - cw);
     y = Math::Clamp(y, 0, room_height - ch);
     _roomCamera.Position.MoveTo(Point(x, y));
@@ -189,7 +188,8 @@ void GameState::ReleaseRoomCamera()
 void GameState::UpdateRoomCamera()
 {
     const Rect &camera = _roomCamera.Position;
-    if ((thisroom.width > camera.GetWidth()) || (thisroom.height > camera.GetHeight()))
+    const Size real_room_sz = Size(multiply_up_coordinate(thisroom.Width), multiply_up_coordinate(thisroom.Height));
+    if ((real_room_sz.Width > camera.GetWidth()) || (real_room_sz.Height > camera.GetHeight()))
     {
         // TODO: split out into Camera Behavior
         if (!play.IsRoomCameraLocked())
@@ -202,38 +202,6 @@ void GameState::UpdateRoomCamera()
     else
     {
         SetRoomCameraAt(0, 0);
-    }
-}
-
-void GameState::SetCameraActualSize(const Size &cam_size)
-{
-    // TODO: currently we don't support having camera larger than room background
-    // (or rather - looking outside of the room background); look into this later
-    int room_width = multiply_up_coordinate(thisroom.width);
-    int room_height = multiply_up_coordinate(thisroom.height);
-    Size real_size = Size::Clamp(cam_size, Size(1, 1), Size(room_width, room_height));
-
-    _roomCamera.Position.SetWidth(real_size.Width);
-    _roomCamera.Position.SetHeight(real_size.Height);
-    AdjustRoomToViewport();
-    _cameraHasChanged = true;
-}
-
-void GameState::UpdateCameraSize()
-{
-    // TODO: when we support multiple cameras/viewports we should perhaps
-    // call viewport-camera render init for each PAIR rather than camera,
-    // to let displaying same camera in different viewports.
-    if (_roomCamera.ScaleX > 0.f && _roomCamera.ScaleY > 0.f)
-    {
-        // Automatic camera scale
-        int camw = _roomViewport.Position.GetWidth() * (1.f / _roomCamera.ScaleX);
-        int camh = _roomViewport.Position.GetHeight() * (1.f / _roomCamera.ScaleY);
-        SetCameraActualSize(Size(camw, camh));
-    }
-    else
-    {
-        AdjustRoomToViewport();
     }
 }
 
@@ -424,7 +392,7 @@ void GameState::ReadFromSavegame(Common::Stream *in, GameStateSvgVersion svg_ver
     in->Read( bad_parsed_word, 100);
     raw_color = in->ReadInt32();
     if (old_save)
-        in->ReadArrayOfInt32(raw_modified, MAX_BSCENE);
+        in->ReadArrayOfInt32(raw_modified, MAX_ROOM_BGFRAMES);
     in->ReadArrayOfInt16( filenumbers, MAXSAVEGAMES);
     if (old_save)
         in->ReadInt32(); // room_changes

@@ -15,7 +15,6 @@
 #include <memory>
 #include "ac/common.h"
 #include "ac/gamesetupstruct.h"
-#include "ac/roomstruct.h"
 #include "ac/runtime_defines.h"
 #include "debug/debug_log.h"
 #include "debug/debugger.h"
@@ -38,7 +37,7 @@ using namespace AGS::Engine;
 
 extern char check_dynamic_sprites_at_exit;
 extern int displayed_room;
-extern roomstruct thisroom;
+extern RoomStruct thisroom;
 extern char pexbuf[STD_BUFFER_SIZE];
 extern volatile char want_exit, abort_engine;
 extern GameSetupStruct game;
@@ -189,7 +188,7 @@ void debug_script_print(const String &msg, MessageType mt)
         String scriptname;
         if (curinst->instanceof == gamescript)
             scriptname = "G ";
-        else if (curinst->instanceof == thisroom.compiled_script)
+        else if (curinst->instanceof == thisroom.CompiledScript)
             scriptname = "R ";
         else if (curinst->instanceof == dialogScriptsScript)
             scriptname = "D ";
@@ -220,13 +219,15 @@ void debug_script_log(const char *msg, ...)
 }
 
 
-const char *get_cur_script(int numberOfLinesOfCallStack) {
-    ccInstance::GetCurrentInstance()->GetCallStack(pexbuf, numberOfLinesOfCallStack);
-
-    if (pexbuf[0] == 0)
-        strcpy(pexbuf, ccErrorCallStack);
-
-    return &pexbuf[0];
+String get_cur_script(int numberOfLinesOfCallStack)
+{
+    String callstack;
+    ccInstance *sci = ccInstance::GetCurrentInstance();
+    if (sci)
+        callstack = sci->GetCallStack(numberOfLinesOfCallStack);
+    if (callstack.IsEmpty())
+        callstack = ccErrorCallStack;
+    return callstack;
 }
 
 bool get_script_position(ScriptPosition &script_pos)
@@ -451,8 +452,7 @@ void scriptDebugHook (ccInstance *ccinst, int linenum) {
 
     if (pluginsWantingDebugHooks > 0) {
         // a plugin is handling the debugging
-        char scname[40];
-        ccinst->GetScriptName(scname);
+        String scname = GetScriptName(ccinst);
         pl_run_plugin_debug_hooks(scname, linenum);
         return;
     }

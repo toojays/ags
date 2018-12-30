@@ -20,11 +20,13 @@
 
 #include <vector>
 
+#include "game/roomstruct.h" // MAX_ROOM_OBJECTS
 #include "script/cc_instance.h"
 #include "script/executingscript.h"
 #include "script/nonblockingscriptfunction.h"
 #include "ac/dynobj/scriptsystem.h"
 #include "game/interactions.h"
+#include "util/string.h"
 
 using AGS::Common::Interaction;
 using AGS::Common::InteractionCommandList;
@@ -50,6 +52,16 @@ void    QueueScriptFunction(ScriptInstType sc_inst, const char *fn_name, size_t 
 void    RunScriptFunction(ScriptInstType sc_inst, const char *fn_name, size_t param_count = 0,
                           const RuntimeScriptValue &p1 = RuntimeScriptValue(), const RuntimeScriptValue &p2 = RuntimeScriptValue());
 
+int     RunScriptFunctionIfExists(ccInstance *sci, const char *tsname, int numParam, const RuntimeScriptValue *params);
+int     RunTextScript(ccInstance *sci, const char *tsname);
+int     RunTextScriptIParam(ccInstance *sci, const char *tsname, const RuntimeScriptValue &iparam);
+int     RunTextScript2IParam(ccInstance *sci, const char *tsname, const RuntimeScriptValue &iparam, const RuntimeScriptValue &param2);
+
+int     PrepareTextScript(ccInstance *sci, const char **tsname);
+bool    DoRunScriptFuncCantBlock(ccInstance *sci, NonBlockingScriptFunction* funcToRun, bool hasTheFunc);
+
+AGS::Common::String GetScriptName(ccInstance *sci);
+
 //=============================================================================
 
 char*   make_ts_func_name(char*base,int iii,int subd);
@@ -63,7 +75,6 @@ int     run_interaction_commandlist (InteractionCommandList *nicl, int *timesrun
 InteractionVariable *get_interaction_variable (int varindx);
 InteractionVariable *FindGraphicalVariable(const char *varName);
 void    run_unhandled_event (int evnt);
-void    setup_exports(char*expfrom);
 void    can_run_delayed_command();
 
 
@@ -99,8 +110,10 @@ extern std::vector<ccInstance *> moduleInstFork;
 extern std::vector<RuntimeScriptValue> moduleRepExecAddr;
 extern int numScriptModules;
 
+// TODO: find out if these extra arrays are really necessary. This may be remains from the
+// time when the symbol import table was holding raw pointers to char array.
 extern std::vector<AGS::Common::String> characterScriptObjNames;
-extern AGS::Common::String objectScriptObjNames[MAX_INIT_SPR];
+extern AGS::Common::String objectScriptObjNames[MAX_ROOM_OBJECTS];
 extern std::vector<AGS::Common::String> guiScriptObjNames;
 
 #endif // __AGS_EE_SCRIPT__SCRIPT_H

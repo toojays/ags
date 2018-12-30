@@ -17,6 +17,7 @@
 
 #include "ac/characterinfo.h"
 #include "ac/runtime_defines.h"
+#include "game/roomstruct.h"
 #include "game/viewport.h"
 #include "media/audio/queuedaudioitem.h"
 #include "util/geometry.h"
@@ -154,7 +155,7 @@ struct GameState {
     short parsed_words[MAX_PARSED_WORDS];
     char  bad_parsed_word[100];
     int   raw_color;
-    int   raw_modified[MAX_BSCENE];
+    int   raw_modified[MAX_ROOM_BGFRAMES];
     short filenumbers[MAXSAVEGAMES];
     int   room_changes;
     int   mouse_cursor_hidden;
@@ -246,8 +247,6 @@ struct GameState {
     const RoomCamera &GetRoomCameraObj() const;
     // Sets explicit room camera's orthographic size
     void SetRoomCameraSize(const Size &cam_size);
-    // Sets automatic room camera resize relative to the viewport it's been used at
-    void SetRoomCameraAutoSize(float scalex = 1.f, float scaley = 1.f);
     // Puts room camera to the new location in the room
     void SetRoomCameraAt(int x, int y);
     // Tells if camera is currently locked at custom position
@@ -306,10 +305,6 @@ private:
     // Tells that the room camera's size has changed since last game update
     bool  _cameraHasChanged;
 
-    // Sets actual camera's size without resetting autoscale flag
-    void SetCameraActualSize(const Size &sz);
-    // Updates camera size after camera or viewport properties change.
-    void UpdateCameraSize();
     // Calculates room-to-viewport coordinate conversion.
     void AdjustRoomToViewport();
 };

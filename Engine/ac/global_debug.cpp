@@ -26,7 +26,6 @@
 #include "ac/movelist.h"
 #include "ac/properties.h"
 #include "ac/record.h"
-#include "ac/roomstruct.h"
 #include "ac/tree_map.h"
 #include "ac/walkablearea.h"
 #include "gfx/gfxfilter.h"
@@ -46,7 +45,7 @@ using namespace AGS::Engine;
 extern GameSetupStruct game;
 extern GameSetup usetup;
 extern GameState play;
-extern roomstruct thisroom;
+extern RoomStruct thisroom;
 extern CharacterInfo*playerchar;
 
 extern int convert_16bit_bgr;
@@ -105,20 +104,20 @@ void script_debug(int cmdd,int dataa) {
     }
     else if (cmdd==2) 
     {  // show walkable areas from here
-        Bitmap *tempw=BitmapHelper::CreateBitmap(thisroom.walls->GetWidth(),thisroom.walls->GetHeight());
+        // TODO: support multiple viewports?!
+        Bitmap *tempw=BitmapHelper::CreateBitmap(thisroom.WalkAreaMask->GetWidth(),thisroom.WalkAreaMask->GetHeight());
         tempw->Blit(prepare_walkable_areas(-1),0,0,0,0,tempw->GetWidth(),tempw->GetHeight());
         const Rect &viewport = play.GetRoomViewport();
         const Rect &camera = play.GetRoomCamera();
-        Bitmap *stretched = BitmapHelper::CreateBitmap(viewport.GetWidth(), viewport.GetHeight());
-        stretched->StretchBlt(tempw,
-			RectWH(-camera.Left, -camera.Top, get_fixed_pixel_size(tempw->GetWidth()), get_fixed_pixel_size(tempw->GetHeight())),
-			Common::kBitmap_Transparency);
+        Bitmap *view_bmp = BitmapHelper::CreateBitmap(viewport.GetWidth(), viewport.GetHeight());
+        Rect mask_src = Rect(camera.Left / thisroom.Resolution, camera.Top / thisroom.Resolution, camera.Right / thisroom.Resolution, camera.Bottom / thisroom.Resolution);
+        view_bmp->StretchBlt(tempw, mask_src, RectWH(0, 0, viewport.GetWidth(), viewport.GetHeight()), Common::kBitmap_Transparency);
 
-        IDriverDependantBitmap *ddb = gfxDriver->CreateDDBFromBitmap(stretched, false, true);
-        render_graphics(ddb, 0, 0);
+        IDriverDependantBitmap *ddb = gfxDriver->CreateDDBFromBitmap(view_bmp, false, true);
+        render_graphics(ddb, viewport.Left, viewport.Top);
 
         delete tempw;
-        delete stretched;
+        delete view_bmp;
         gfxDriver->DestroyDDB(ddb);
         wait_until_keypress();
         invalidate_screen();
@@ -153,7 +152,7 @@ void script_debug(int cmdd,int dataa) {
             Display("Not currently moving.");
             return;
         }
-        Bitmap *tempw=BitmapHelper::CreateTransparentBitmap(thisroom.walls->GetWidth(),thisroom.walls->GetHeight());
+        Bitmap *tempw=BitmapHelper::CreateTransparentBitmap(thisroom.WalkAreaMask->GetWidth(),thisroom.WalkAreaMask->GetHeight());
         int mlsnum = game.chars[dataa].walking;
         if (game.chars[dataa].walking >= TURNING_AROUND)
             mlsnum %= TURNING_AROUND;
@@ -165,13 +164,19 @@ void script_debug(int cmdd,int dataa) {
             short targety=short(cmls->pos[i+1] & 0x00ffff);
             tempw->DrawLine(Line(srcx, srcy, targetx, targety), GetVirtualScreen()->GetCompatibleColor(i+1));
         }
-        Rect camera = play.GetRoomCamera(); // TODO: or is this logically viewport coords?
-		Bitmap *screen_bmp = BitmapHelper::GetScreenBitmap();
-        screen_bmp->StretchBlt(tempw,
-			RectWH(-camera.Left, -camera.Top, multiply_up_coordinate(tempw->GetWidth()), multiply_up_coordinate(tempw->GetHeight())),
-			Common::kBitmap_Transparency);
-        render_to_screen(BitmapHelper::GetScreenBitmap(), 0, 0);
+
+        const Rect &viewport = play.GetRoomViewport();
+        const Rect &camera = play.GetRoomCamera();
+        Bitmap *view_bmp = BitmapHelper::CreateBitmap(viewport.GetWidth(), viewport.GetHeight());
+        Rect mask_src = Rect(camera.Left / thisroom.Resolution, camera.Top / thisroom.Resolution, camera.Right / thisroom.Resolution, camera.Bottom / thisroom.Resolution);
+        view_bmp->StretchBlt(tempw, mask_src, RectWH(0, 0, viewport.GetWidth(), viewport.GetHeight()), Common::kBitmap_Transparency);
+
+        IDriverDependantBitmap *ddb = gfxDriver->CreateDDBFromBitmap(view_bmp, false, true);
+        render_graphics(ddb, viewport.Left, viewport.Top);
+
         delete tempw;
+        delete view_bmp;
+        gfxDriver->DestroyDDB(ddb);
         wait_until_keypress();
     }
     else if (cmdd == 99)

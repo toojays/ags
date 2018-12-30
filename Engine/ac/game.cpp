@@ -47,7 +47,6 @@
 #include "ac/room.h"
 #include "ac/roomobject.h"
 #include "ac/roomstatus.h"
-#include "ac/roomstruct.h"
 #include "ac/runtime_defines.h"
 #include "ac/screenoverlay.h"
 #include "ac/spritecache.h"
@@ -59,7 +58,6 @@
 #include "ac/dynobj/all_scriptclasses.h"
 #include "ac/dynobj/cc_audiochannel.h"
 #include "ac/dynobj/cc_audioclip.h"
-#include "ac/dynobj/scriptviewport.h"
 #include "debug/debug_log.h"
 #include "debug/out.h"
 #include "device/mousew32.h"
@@ -139,7 +137,7 @@ GameSetupStruct game;
 RoomStatus troom;    // used for non-saveable rooms, eg. intro
 RoomObject*objs;
 RoomStatus*croom=NULL;
-roomstruct thisroom;
+RoomStruct thisroom;
 
 volatile int switching_away_from_game = 0;
 volatile bool switched_away = false;
@@ -174,17 +172,17 @@ ScriptString myScriptStringImpl;
 // until we implement safe management of such containers in script exports
 // system. Noteably we would need an alternate to StaticArray class to track
 // access to their elements.
-ScriptObject scrObj[MAX_INIT_SPR];
+ScriptObject scrObj[MAX_ROOM_OBJECTS];
 ScriptGUI    *scrGui = NULL;
-ScriptHotspot scrHotspot[MAX_HOTSPOTS];
-ScriptRegion scrRegion[MAX_REGIONS];
+ScriptHotspot scrHotspot[MAX_ROOM_HOTSPOTS];
+ScriptRegion scrRegion[MAX_ROOM_REGIONS];
 ScriptInvItem scrInv[MAX_INV];
 ScriptDialog *scrDialog;
 
 ViewStruct*views=NULL;
 
 CharacterCache *charcache = NULL;
-ObjectCache objcache[MAX_INIT_SPR];
+ObjectCache objcache[MAX_ROOM_OBJECTS];
 
 MoveList *mls = NULL;
 
@@ -468,7 +466,7 @@ const char* Game_GetSaveSlotDescription(int slnum) {
 
 void restore_game_dialog() {
     can_run_delayed_command();
-    if (thisroom.options[ST_SAVELOAD] == 1) {
+    if (thisroom.Options.SaveLoadDisabled == 1) {
         DisplayMessage (983);
         return;
     }
@@ -485,7 +483,7 @@ void restore_game_dialog() {
 }
 
 void save_game_dialog() {
-    if (thisroom.options[ST_SAVELOAD] == 1) {
+    if (thisroom.Options.SaveLoadDisabled == 1) {
         DisplayMessage (983);
         return;
     }
@@ -966,24 +964,6 @@ ScriptAudioClip *Game_GetAudioClip(int index)
     return &game.audioClips[index];
 }
 
-
-bool Game_GetAutoSizeViewport()
-{
-    return play.IsAutoRoomViewport();
-}
-
-void Game_SetAutoSizeViewport(bool on)
-{
-    play.SetAutoRoomViewport(on);
-}
-
-ScriptViewport* Game_GetRoomViewport()
-{
-    ScriptViewport *viewport = new ScriptViewport();
-    ccRegisterManagedObject(viewport, viewport);
-    return viewport;
-}
-
 //=============================================================================
 
 // save game functions
@@ -1353,7 +1333,7 @@ void restore_game_play(Stream *in)
 void ReadMoveList_Aligned(Stream *in)
 {
     AlignedStream align_s(in, Common::kAligned_Read);
-    for (int i = 0; i < game.numcharacters + MAX_INIT_SPR + 1; ++i)
+    for (int i = 0; i < game.numcharacters + MAX_ROOM_OBJECTS + 1; ++i)
     {
         mls[i].ReadFromFile_Legacy(&align_s);
 
@@ -1438,8 +1418,8 @@ HSaveError restore_game_audiocliptypes(Stream *in)
 
 void restore_game_thisroom(Stream *in, RestoredData &r_data)
 {
-    in->ReadArrayOfInt16(r_data.RoomLightLevels, MAX_REGIONS);
-    in->ReadArrayOfInt32(r_data.RoomTintLevels, MAX_REGIONS);
+    in->ReadArrayOfInt16(r_data.RoomLightLevels, MAX_ROOM_REGIONS);
+    in->ReadArrayOfInt32(r_data.RoomTintLevels, MAX_ROOM_REGIONS);
     in->ReadArrayOfInt16(r_data.RoomZoomLevels1, MAX_WALK_AREAS + 1);
     in->ReadArrayOfInt16(r_data.RoomZoomLevels2, MAX_WALK_AREAS + 1);
 }
@@ -1504,15 +1484,15 @@ void restore_game_dynamic_surfaces(Stream *in, RestoredData &r_data)
 void restore_game_displayed_room_status(Stream *in, RestoredData &r_data)
 {
     int bb;
-    for (bb = 0; bb < MAX_BSCENE; bb++)
-        r_data.RoomBkgScene[bb] = NULL;
+    for (bb = 0; bb < MAX_ROOM_BGFRAMES; bb++)
+        r_data.RoomBkgScene[bb].reset();
 
     if (displayed_room >= 0) {
 
-        for (bb = 0; bb < MAX_BSCENE; bb++) {
+        for (bb = 0; bb < MAX_ROOM_BGFRAMES; bb++) {
             r_data.RoomBkgScene[bb] = NULL;
             if (play.raw_modified[bb]) {
-                r_data.RoomBkgScene[bb] = read_serialized_bitmap (in);
+                r_data.RoomBkgScene[bb].reset(read_serialized_bitmap(in));
             }
         }
         bb = in->ReadInt32();
@@ -1708,12 +1688,12 @@ HSaveError restore_game_data(Stream *in, SavegameVersion svg_version, const Pres
         return new SavegameError(kSvgErr_InconsistentPlugin);
 
     // save the new room music vol for later use
-    r_data.RoomVolume = in->ReadInt32();
+    r_data.RoomVolume = (RoomVolumeMod)in->ReadInt32();
 
     if (ccUnserializeAllObjects(in, &ccUnserializer))
     {
         return new SavegameError(kSvgErr_GameObjectInitFailed,
-            String::FromFormat("Managed pool deserialization failed: %s.", ccErrorString));
+            String::FromFormat("Managed pool deserialization failed: %s.", ccErrorString.GetCStr()));
     }
 
     // preserve legacy music type setting
@@ -1900,7 +1880,7 @@ int __GetLocationType(int xxx,int yyy, int allowHotspot0) {
     Point roompt = play.ScreenToRoomDivDown(xxx, yyy);
     xxx = roompt.X;
     yyy = roompt.Y;
-    if ((xxx>=thisroom.width) | (xxx<0) | (yyy<0) | (yyy>=thisroom.height))
+    if ((xxx>=thisroom.Width) | (xxx<0) | (yyy<0) | (yyy>=thisroom.Height))
         return 0;
 
     // check characters, objects and walkbehinds, work out which is
@@ -1911,7 +1891,7 @@ int __GetLocationType(int xxx,int yyy, int allowHotspot0) {
 
     multiply_up_coordinates(&xxx, &yyy);
 
-    int wbat = thisroom.object->GetPixel(xxx, yyy);
+    int wbat = thisroom.WalkBehindMask->GetPixel(xxx, yyy);
 
     if (wbat <= 0) wbat = 0;
     else wbat = croom->walkbehind_base[wbat];
@@ -2105,7 +2085,7 @@ void get_message_text (int msnum, char *buffer, char giveErr) {
         replace_tokens(get_translation(game.messages[msnum-500]), buffer, maxlen);
         return;
     }
-    else if (msnum >= thisroom.nummes) {
+    else if (msnum < 0 || (size_t)msnum >= thisroom.MessageCount) {
         if (giveErr)
             quit("!DisplayMessage: Invalid message number to display");
         buffer[0] = 0;
@@ -2113,7 +2093,7 @@ void get_message_text (int msnum, char *buffer, char giveErr) {
     }
 
     buffer[0]=0;
-    replace_tokens(get_translation(thisroom.message[msnum]), buffer, maxlen);
+    replace_tokens(get_translation(thisroom.Messages[msnum]), buffer, maxlen);
 }
 
 bool unserialize_audio_script_object(int index, const char *objectType, const char *serializedData, int dataSize)
@@ -2434,21 +2414,6 @@ RuntimeScriptValue Sc_Game_IsPluginLoaded(const RuntimeScriptValue *params, int3
     API_SCALL_BOOL_OBJ(pl_is_plugin_loaded, const char);
 }
 
-RuntimeScriptValue Sc_Game_GetAutoSizeViewport(const RuntimeScriptValue *params, int32_t param_count)
-{
-    API_SCALL_BOOL(Game_GetAutoSizeViewport);
-}
-
-RuntimeScriptValue Sc_Game_SetAutoSizeViewport(const RuntimeScriptValue *params, int32_t param_count)
-{
-    API_SCALL_VOID_PBOOL(Game_SetAutoSizeViewport);
-}
-
-RuntimeScriptValue Sc_Game_GetRoomViewport(const RuntimeScriptValue *params, int32_t param_count)
-{
-    API_SCALL_OBJAUTO(ScriptViewport, Game_GetRoomViewport);
-}
-
 
 void RegisterGameAPI()
 {
@@ -2501,9 +2466,6 @@ void RegisterGameAPI()
     ccAddExternalStaticFunction("Game::get_AudioClipCount",                     Sc_Game_GetAudioClipCount);
     ccAddExternalStaticFunction("Game::geti_AudioClips",                        Sc_Game_GetAudioClip);
     ccAddExternalStaticFunction("Game::IsPluginLoaded",                         Sc_Game_IsPluginLoaded);
-    ccAddExternalStaticFunction("Game::get_AutoSizeViewportOnRoomLoad",         Sc_Game_GetAutoSizeViewport);
-    ccAddExternalStaticFunction("Game::set_AutoSizeViewportOnRoomLoad",         Sc_Game_SetAutoSizeViewport);
-    ccAddExternalStaticFunction("Game::get_RoomViewport",                       Sc_Game_GetRoomViewport);
 
     /* ----------------------- Registering unsafe exports for plugins -----------------------*/
 
